@@ -54,6 +54,12 @@ const intlWeekdayMap: Record<string, Weekday> = {
   Sun: "sun"
 };
 
+export type CurrentOpeningWindow = {
+  closesAt: string;
+  closesNextDay: boolean;
+  allDay: boolean;
+};
+
 export function parseOpeningHoursJson(value: unknown): OpeningHoursJson | null {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -63,18 +69,46 @@ export function parseOpeningHoursJson(value: unknown): OpeningHoursJson | null {
   return openingHoursJsonSchema.parse(parsed);
 }
 
-export function isOpenNow(hours: OpeningHoursJson | null, now = new Date()): boolean | null {
+export function getCurrentOpeningWindow(
+  hours: OpeningHoursJson | null,
+  now = new Date()
+): CurrentOpeningWindow | null {
   if (!hours) {
     return null;
   }
 
   const { weekday, minutes } = getMoscowDateParts(now);
   const previousWeekday = weekdays[(weekdays.indexOf(weekday) + 6) % 7];
+  const sameDayInterval = findSameDayOpenInterval(hours.weekly[weekday] ?? [], minutes);
+  if (sameDayInterval) {
+    return {
+      closesAt: sameDayInterval.to,
+      closesNextDay: sameDayInterval.next_day === true,
+      allDay: isAllDayInterval(sameDayInterval)
+    };
+  }
 
-  return (
-    isOpenInSameDayInterval(hours.weekly[weekday] ?? [], minutes) ||
-    isOpenInPreviousDayOvernightInterval(hours.weekly[previousWeekday] ?? [], minutes)
+  const previousDayInterval = findPreviousDayOvernightInterval(
+    hours.weekly[previousWeekday] ?? [],
+    minutes
   );
+  if (previousDayInterval) {
+    return {
+      closesAt: previousDayInterval.to,
+      closesNextDay: false,
+      allDay: isAllDayInterval(previousDayInterval)
+    };
+  }
+
+  return null;
+}
+
+export function isOpenNow(hours: OpeningHoursJson | null, now = new Date()): boolean | null {
+  if (!hours) {
+    return null;
+  }
+
+  return getCurrentOpeningWindow(hours, now) !== null;
 }
 
 function getMoscowDateParts(date: Date): { weekday: Weekday; minutes: number } {
@@ -100,8 +134,15 @@ function getMoscowDateParts(date: Date): { weekday: Weekday; minutes: number } {
   };
 }
 
-function isOpenInSameDayInterval(intervals: OpeningHoursInterval[], minutes: number): boolean {
-  return intervals.some((interval) => {
+function findSameDayOpenInterval(
+  intervals: OpeningHoursInterval[],
+  minutes: number
+): OpeningHoursInterval | null {
+  return intervals.find((interval) => {
+    if (isAllDayInterval(interval)) {
+      return true;
+    }
+
     const from = toMinutes(interval.from);
     const to = toMinutes(interval.to);
 
@@ -110,15 +151,25 @@ function isOpenInSameDayInterval(intervals: OpeningHoursInterval[], minutes: num
     }
 
     return minutes >= from && minutes < to;
-  });
+  }) ?? null;
 }
 
-function isOpenInPreviousDayOvernightInterval(intervals: OpeningHoursInterval[], minutes: number): boolean {
-  return intervals.some((interval) => {
+function findPreviousDayOvernightInterval(
+  intervals: OpeningHoursInterval[],
+  minutes: number
+): OpeningHoursInterval | null {
+  return intervals.find((interval) => {
     const from = toMinutes(interval.from);
     const to = toMinutes(interval.to);
     return interval.next_day === true && minutes < to;
-  });
+  }) ?? null;
+}
+
+function isAllDayInterval(interval: OpeningHoursInterval): boolean {
+  return (
+    (interval.from === "00:00" && interval.to === "00:00" && interval.next_day === true) ||
+    (interval.from === "00:00" && interval.to === "23:59" && interval.next_day !== true)
+  );
 }
 
 function toMinutes(time: string): number {

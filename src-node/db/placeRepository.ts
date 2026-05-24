@@ -218,9 +218,17 @@ function parseCategories(value: string | null): PlaceCategorySummary[] {
     isPrimary: 0 | 1 | boolean;
   }>;
 
-  return parsed.map((category) => ({
-    slug: category.slug,
-    name: category.name,
-    isPrimary: category.isPrimary === true || category.isPrimary === 1
-  }));
+  return parsed
+    .map((category) => ({
+      slug: category.slug,
+      name: category.name,
+      isPrimary: category.isPrimary === true || category.isPrimary === 1
+    }))
+    .sort((left, right) => {
+      if (left.isPrimary !== right.isPrimary) {
+        return left.isPrimary ? -1 : 1;
+      }
+
+      return left.name.localeCompare(right.name, "ru");
+    });
 }

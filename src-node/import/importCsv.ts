@@ -42,6 +42,7 @@ export function importCsv(config: AppConfig): ImportResult {
 
     handle.sqlite.transaction(() => {
       upsertCategories(handle.db, categoryRows);
+      deleteCategoriesAbsentFromCsv(handle.db, categoryRows);
       deletePlacesAbsentFromCsv(handle.db, placeRows);
       upsertPlaces(handle.db, placeRows);
       replacePlaceCategories(handle.db);
@@ -66,6 +67,17 @@ function deletePlacesAbsentFromCsv(db: ReturnType<typeof openDatabase>["db"], ro
 
   db.delete(places)
     .where(notInArray(places.externalId, externalIds))
+    .run();
+}
+
+function deleteCategoriesAbsentFromCsv(db: ReturnType<typeof openDatabase>["db"], rows: CategoryCsvRow[]): void {
+  const slugs = rows.map((row) => row.slug);
+  if (slugs.length === 0) {
+    return;
+  }
+
+  db.delete(categories)
+    .where(notInArray(categories.slug, slugs))
     .run();
 }
 
@@ -139,14 +151,12 @@ function upsertCategories(db: ReturnType<typeof openDatabase>["db"], rows: Categ
     db.insert(categories)
       .values({
         slug: row.slug,
-        name: row.name,
-        type: row.type
+        name: row.name
       })
       .onConflictDoUpdate({
         target: categories.slug,
         set: {
-          name: row.name,
-          type: row.type
+          name: row.name
         }
       })
       .run();

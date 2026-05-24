@@ -21,8 +21,13 @@ data/*.sqlite-shm
 data/*.sqlite-wal
 *.db
 
+# generated data-prep artifacts
+data/raw
+data/import_day_points_*
+
 # OS / logs
 .DS_Store
+**/.DS_Store
 *.log
 
 # keys

@@ -77,13 +77,11 @@ describe("CSV import and repository", () => {
     expect(
       categoryCsvRowSchema.parse({
         slug: "city_cafe",
-        name: "Городские кафе",
-        type: "place"
+        name: "Городские кафе"
       })
     ).toEqual({
       slug: "city_cafe",
-      name: "Городские кафе",
-      type: "place"
+      name: "Городские кафе"
     });
   });
 
@@ -156,6 +154,41 @@ describe("CSV import and repository", () => {
       handle.close();
     }
   });
+
+  it("deletes categories that are absent from the latest CSV import", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    tempDirs.push(tempDir);
+
+    const importDir = join(tempDir, "import");
+    const config = makeTestConfig(join(tempDir, "bot.sqlite"), importDir);
+
+    writeMinimalImportDir(importDir, "test-place", "Тестовое место", [
+      ["restaurant", "Ресторан"],
+      ["city_cafe", "Городские кафе"]
+    ], [
+      ["test-place", "restaurant", "true"],
+      ["test-place", "city_cafe", "false"]
+    ]);
+    importCsv(config);
+
+    writeMinimalImportDir(importDir, "test-place", "Тестовое место");
+    importCsv(config);
+
+    const handle = openDatabase(config);
+    try {
+      const categorySlugs = handle.sqlite
+        .prepare("SELECT slug FROM categories ORDER BY slug")
+        .all() as Array<{ slug: string }>;
+      const categoryLinks = handle.sqlite.prepare("SELECT COUNT(*) AS count FROM place_categories").get() as {
+        count: number;
+      };
+
+      expect(categorySlugs).toEqual([{ slug: "restaurant" }]);
+      expect(categoryLinks.count).toBe(1);
+    } finally {
+      handle.close();
+    }
+  });
 });
 
 function makeTestConfig(databasePath: string, importDir = resolve("data/import")): AppConfig {
@@ -181,12 +214,21 @@ function makeTestConfig(databasePath: string, importDir = resolve("data/import")
   };
 }
 
-function writeMinimalImportDir(importDir: string, externalId: string, displayName: string): void {
+function writeMinimalImportDir(
+  importDir: string,
+  externalId: string,
+  displayName: string,
+  categoryRows: Array<[string, string]> = [["restaurant", "Ресторан"]],
+  placeCategoryRows: Array<[string, string, string]> = [[externalId, "restaurant", "true"]]
+): void {
   mkdirSync(importDir, { recursive: true });
 
   writeFileSync(
     join(importDir, "categories.csv"),
-    "slug,name,type\nrestaurant,Ресторан,place\n",
+    [
+      "slug,name",
+      ...categoryRows.map((row) => csvLine(row))
+    ].join("\n"),
     "utf8"
   );
   writeFileSync(
@@ -211,7 +253,10 @@ function writeMinimalImportDir(importDir: string, externalId: string, displayNam
   );
   writeFileSync(
     join(importDir, "place_categories.csv"),
-    `place_external_id,category_slug,is_primary\n${externalId},restaurant,true\n`,
+    [
+      "place_external_id,category_slug,is_primary",
+      ...placeCategoryRows.map((row) => csvLine(row))
+    ].join("\n"),
     "utf8"
   );
 }

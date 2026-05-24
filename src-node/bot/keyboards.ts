@@ -1,23 +1,99 @@
 import { Keyboard } from "grammy";
 
-export const LOCATION_BUTTON_TEXT = "📍 Поделиться локацией с телефона";
-export const MANUAL_LOCATION_BUTTON_TEXT = "🧭 Ввести адрес";
-export const RANDOM_BUTTON_TEXT = "🎲 Случайное место";
+export const LOCATION_BUTTON_TEXT = "📍 Поделиться локацией";
+export const MORE_NEARBY_BUTTON_TEXT = "🔁 Ещё вариант";
+export const RANDOM_BUTTON_TEXT = "🎲 Случайный выбор";
+export const ROUTE_BUTTON_TEXT = "🧭 Собрать маршрут";
+export const CHANGE_SCENARIO_BUTTON_TEXT = "🔄 Сменить категорию";
 export const CONFIRM_LOCATION_BUTTON_TEXT = "Да";
 export const CHANGE_LOCATION_BUTTON_TEXT = "Ввести другой адрес";
 
-export function mainKeyboard(): Keyboard {
-  return new Keyboard()
-    .requestLocation(LOCATION_BUTTON_TEXT)
-    .text(MANUAL_LOCATION_BUTTON_TEXT)
+export const DESIRE_BUTTONS = [
+  "🍽 Поесть",
+  "☕ Кофе и перекус",
+  "🍸 Выпить",
+  "🖼 Посмотреть",
+  "🌿 На воздух",
+  "🧖 Отдохнуть"
+] as const;
+
+export type DesireButtonText = typeof DESIRE_BUTTONS[number];
+
+export const ROUTE_DURATION_BUTTONS = [
+  "2 часа",
+  "3 часа",
+  "5 часов",
+  "8 часов"
+] as const;
+
+export type RouteDurationButtonText = typeof ROUTE_DURATION_BUTTONS[number];
+
+export type MainKeyboardOptions = {
+  hasResolvedLocation?: boolean;
+  showResultActions?: boolean;
+};
+
+export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
+  const keyboard = new Keyboard();
+
+  if (!options.hasResolvedLocation) {
+    return keyboard
+      .requestLocation(LOCATION_BUTTON_TEXT)
+      .row()
+      .text(RANDOM_BUTTON_TEXT)
+      .row()
+      .text(ROUTE_BUTTON_TEXT)
+      .resized();
+  }
+
+  if (options.showResultActions) {
+    return keyboard
+      .text(MORE_NEARBY_BUTTON_TEXT)
+      .row()
+      .text(CHANGE_SCENARIO_BUTTON_TEXT)
+      .row()
+      .text(RANDOM_BUTTON_TEXT)
+      .row()
+      .text(ROUTE_BUTTON_TEXT)
+      .resized();
+  }
+
+  return keyboard
+    .text(DESIRE_BUTTONS[0])
+    .row()
+    .text(DESIRE_BUTTONS[1])
+    .row()
+    .text(DESIRE_BUTTONS[2])
+    .row()
+    .text(DESIRE_BUTTONS[3])
+    .row()
+    .text(DESIRE_BUTTONS[4])
+    .row()
+    .text(DESIRE_BUTTONS[5])
     .row()
     .text(RANDOM_BUTTON_TEXT)
+    .row()
+    .text(ROUTE_BUTTON_TEXT)
     .resized();
+}
+
+export function routeDurationKeyboard(): Keyboard {
+  return new Keyboard()
+    .text(ROUTE_DURATION_BUTTONS[0])
+    .row()
+    .text(ROUTE_DURATION_BUTTONS[1])
+    .row()
+    .text(ROUTE_DURATION_BUTTONS[2])
+    .row()
+    .text(ROUTE_DURATION_BUTTONS[3])
+    .resized()
+    .oneTime();
 }
 
 export function locationConfirmationKeyboard(): Keyboard {
   return new Keyboard()
     .text(CONFIRM_LOCATION_BUTTON_TEXT)
+    .row()
     .text(CHANGE_LOCATION_BUTTON_TEXT)
     .row()
     .requestLocation(LOCATION_BUTTON_TEXT)

@@ -5,8 +5,7 @@ import type { OpeningHoursJson } from "../shared/types.js";
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   slug: text("slug").notNull().unique(),
-  name: text("name").notNull(),
-  type: text("type").notNull().default("place")
+  name: text("name").notNull()
 });
 
 export const places = sqliteTable(

@@ -1,10 +1,16 @@
 slug,name,type
-restaurant,Ресторан,base
-bar,Бар,base
-coffee,Кофейня,base
-cocktail_bar,Коктейльный бар,base
-breakfast,Завтраки,scenario
-culture,Культура,scenario
-walk,Прогулка,scenario
-city_cafe,Городское кафе,base
-fine_dining,Высокая кухня,base
+restaurant,Ресторан,place
+bar,Бар,place
+coffee,Кофейня,place
+cocktail_bar,Коктейли,place
+breakfast,Завтраки,place
+culture,Культура,place
+fine_dining,Высокая кухня,place
+quick_bite,Перекус,place
+wine_bar,Вино,place
+pub,Паб,place
+park,Парк,place
+landmark,Городская точка,place
+viewpoint,Видовая точка,place
+activity,Активность,place
+bathhouse,Бани,place

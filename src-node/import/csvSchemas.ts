@@ -26,8 +26,7 @@ const csvBoolean = z.preprocess((value) => {
 
 export const categoryCsvRowSchema = z.object({
   slug: slugString,
-  name: nonEmptyString,
-  type: nonEmptyString
+  name: nonEmptyString
 });
 
 export const placeCsvRowSchema = z

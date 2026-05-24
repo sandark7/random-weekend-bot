@@ -13,8 +13,11 @@ coverage
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+data/raw
+data/import_day_points_*
 
 .git
 .gitignore
 .DS_Store
+**/.DS_Store
 *.log
