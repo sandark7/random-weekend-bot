@@ -1,0 +1,29 @@
+services:
+  bot:
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_PATH: /app/data/bot.sqlite
+      IMPORT_DIR: /app/import
+      GEOCODER_URL: https://nominatim.openstreetmap.org/search
+      GEOCODER_ACCEPT_LANGUAGE: ru
+      GEOCODER_COUNTRY_CODES: ru
+      GEOCODER_CITY_BIAS: Москва
+      GEOCODER_VIEWBOX: 37.15,56.05,38.10,55.45
+      GEOCODER_BOUNDED: "true"
+      GEOCODER_TIMEOUT_MS: 5000
+      GEOCODER_MIN_INTERVAL_MS: 1100
+    ports:
+      - "3000:3000"
+    volumes:
+      - citydatebot-sqlite-data:/app/data
+      - ./data/import:/app/import:ro
+    restart: unless-stopped
+
+volumes:
+  citydatebot-sqlite-data:

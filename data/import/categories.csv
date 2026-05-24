@@ -1,0 +1,10 @@
+slug,name,type
+restaurant,Ресторан,base
+bar,Бар,base
+coffee,Кофейня,base
+cocktail_bar,Коктейльный бар,base
+breakfast,Завтраки,scenario
+culture,Культура,scenario
+walk,Прогулка,scenario
+city_cafe,Городское кафе,base
+fine_dining,Высокая кухня,base

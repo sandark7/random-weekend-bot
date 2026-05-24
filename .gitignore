@@ -1,0 +1,32 @@
+# dependencies
+node_modules
+.venv
+
+# build artifacts
+dist
+dist-node
+coverage
+.pytest_cache
+.cache
+.project-audit
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# runtime database
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+*.db
+
+# OS / logs
+.DS_Store
+*.log
+
+# keys
+*.key
+*.pem
+id_rsa
+id_ed25519

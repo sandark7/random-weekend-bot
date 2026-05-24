@@ -1,0 +1,38 @@
+[
+  {
+    "id": "paveletskaya",
+    "title": "Павелецкая",
+    "aliases": ["павелецкая", "paveletskaya", "павелецкий вокзал", "paveletsky"],
+    "latitude": 55.73178,
+    "longitude": 37.63674
+  },
+  {
+    "id": "zaryadye",
+    "title": "Зарядье",
+    "aliases": ["зарядье", "zaryadye", "варварка", "китай-город"],
+    "latitude": 55.75125,
+    "longitude": 37.62896
+  },
+  {
+    "id": "chistye-prudy",
+    "title": "Чистые пруды",
+    "aliases": ["чистые пруды", "чистопрудный", "chistye prudy"],
+    "latitude": 55.76515,
+    "longitude": 37.63869
+  },
+  {
+    "id": "patriarch-ponds",
+    "title": "Патриаршие пруды",
+    "aliases": ["патрики", "патриаршие", "патриаршие пруды", "patriki"],
+    "latitude": 55.76383,
+    "longitude": 37.59231
+  },
+  {
+    "id": "pyatnitskaya",
+    "title": "Пятницкая",
+    "aliases": ["пятницкая", "pyatnitskaya", "новокузнецкая", "третьяковская"],
+    "latitude": 55.73961,
+    "longitude": 37.62812
+  }
+]
+
