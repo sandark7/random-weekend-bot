@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlaceRepository } from "../src-node/db/placeRepository.js";
 import { buildRoute } from "../src-node/recommendation/routeBuilder.js";
-import { placeVisitDurationMinutes, routeDuration } from "../src-node/recommendation/routeRules.js";
+import {
+  MAX_ROUTE_TRANSITION_METERS,
+  placeVisitDurationMinutes,
+  routeDuration,
+  walkingMinutes
+} from "../src-node/recommendation/routeRules.js";
 import { PLACE_SCENARIOS } from "../src-node/recommendation/scenarios.js";
 import type { PlaceSuggestion } from "../src-node/shared/types.js";
 
@@ -28,6 +33,11 @@ describe("route planner", () => {
         visitDurationMinutes: placeVisitDurationMinutes(landmark)
       }
     ])).toBe(25);
+  });
+
+  it("keeps transition radius aligned with walking time model", () => {
+    expect(MAX_ROUTE_TRANSITION_METERS).toBe(1120);
+    expect(walkingMinutes(MAX_ROUTE_TRANSITION_METERS)).toBeLessThanOrEqual(20);
   });
 
   it("does not start a route with drinks even in the evening", () => {
@@ -159,23 +169,27 @@ describe("route planner", () => {
   it("filters transitions longer than twenty walking minutes", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     let nextPlaceId = 1;
+    const requestedRadii: number[] = [];
     const repo = {
-      findNearby: (options: { lat: number; lon: number; categorySlug?: string }) => [
-        makeSuggestion({
-          placeId: nextPlaceId++,
-          slug: options.categorySlug ?? "restaurant",
-          lat: options.lat + 0.05,
-          lon: options.lon + 0.05,
-          distanceMeters: 2_000
-        }),
-        makeSuggestion({
-          placeId: nextPlaceId++,
-          slug: options.categorySlug ?? "restaurant",
-          lat: options.lat + 0.001,
-          lon: options.lon + 0.001,
-          distanceMeters: 800
-        })
-      ]
+      findNearby: (options: { lat: number; lon: number; radiusMeters?: number; categorySlug?: string }) => {
+        requestedRadii.push(options.radiusMeters ?? 0);
+        return [
+          makeSuggestion({
+            placeId: nextPlaceId++,
+            slug: options.categorySlug ?? "restaurant",
+            lat: options.lat + 0.05,
+            lon: options.lon + 0.05,
+            distanceMeters: 2_000
+          }),
+          makeSuggestion({
+            placeId: nextPlaceId++,
+            slug: options.categorySlug ?? "restaurant",
+            lat: options.lat + 0.001,
+            lon: options.lon + 0.001,
+            distanceMeters: 800
+          })
+        ];
+      }
     } as unknown as PlaceRepository;
 
     const route = buildRoute(repo, {
@@ -187,8 +201,10 @@ describe("route planner", () => {
     });
 
     expect(route).not.toBeNull();
+    expect(requestedRadii.length).toBeGreaterThan(0);
+    expect(requestedRadii.every((radiusMeters) => radiusMeters <= MAX_ROUTE_TRANSITION_METERS)).toBe(true);
     expect(route?.every((step) => step.walkMinutes <= 20)).toBe(true);
-    expect(route?.every((step) => step.suggestion.distanceMeters <= 1600)).toBe(true);
+    expect(route?.every((step) => step.suggestion.distanceMeters <= MAX_ROUTE_TRANSITION_METERS)).toBe(true);
   });
 
   it("uses the previous picked place as the origin for the next route step", () => {
