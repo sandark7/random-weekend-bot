@@ -13,45 +13,41 @@ import {
 } from "../src-node/bot/keyboards.js";
 
 describe("bot keyboards", () => {
-  it("shows the main action buttons vertically", () => {
+  it("keeps the location button wide and shows main actions by two", () => {
     expect(mainKeyboard()).toMatchObject({
       keyboard: [
         [{ text: LOCATION_BUTTON_TEXT, request_location: true }],
-        [{ text: RANDOM_BUTTON_TEXT }],
-        [{ text: ROUTE_BUTTON_TEXT }]
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });
 
-  it("shows scenario buttons after resolving a location", () => {
+  it("shows scenario buttons by two after resolving a location", () => {
     expect(mainKeyboard({ hasResolvedLocation: true })).toMatchObject({
       keyboard: [
-        [{ text: DESIRE_BUTTONS[0] }],
-        [{ text: DESIRE_BUTTONS[1] }],
-        [{ text: DESIRE_BUTTONS[2] }],
-        [{ text: DESIRE_BUTTONS[3] }],
-        [{ text: DESIRE_BUTTONS[4] }],
-        [{ text: DESIRE_BUTTONS[5] }],
-        [{ text: RANDOM_BUTTON_TEXT }],
-        [{ text: ROUTE_BUTTON_TEXT }]
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });
 
-  it("shows result actions after a suggestion", () => {
+  it("shows result actions by two after a suggestion", () => {
     expect(mainKeyboard({ hasResolvedLocation: true, showResultActions: true })).toMatchObject({
       keyboard: [
-        [{ text: MORE_NEARBY_BUTTON_TEXT }],
-        [{ text: CHANGE_SCENARIO_BUTTON_TEXT }],
-        [{ text: RANDOM_BUTTON_TEXT }],
-        [{ text: ROUTE_BUTTON_TEXT }]
+        [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: CHANGE_SCENARIO_BUTTON_TEXT }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });
 
-  it("shows route duration choices vertically", () => {
+  it("shows route duration choices by two", () => {
     expect(routeDurationKeyboard()).toMatchObject({
-      keyboard: ROUTE_DURATION_BUTTONS.map((text) => [{ text }])
+      keyboard: [
+        [{ text: ROUTE_DURATION_BUTTONS[0] }, { text: ROUTE_DURATION_BUTTONS[1] }],
+        [{ text: ROUTE_DURATION_BUTTONS[2] }, { text: ROUTE_DURATION_BUTTONS[3] }]
+      ]
     });
   });
 

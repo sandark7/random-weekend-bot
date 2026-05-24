@@ -109,29 +109,35 @@ function validateImportGraph(
 
   const categorySlugs = new Set(categoryRows.map((row) => row.slug));
   const placeExternalIds = new Set(placeRows.map((row) => row.external_id));
-  const primaryByPlace = new Map<string, number>();
+  const categoriesByPlace = new Map<string, PlaceCategoryCsvRow[]>();
 
   for (const row of placeCategoryRows) {
     if (!placeExternalIds.has(row.place_external_id)) {
       throw new Error(`Unknown place_external_id in place_categories.csv: ${row.place_external_id}`);
     }
+
     if (!categorySlugs.has(row.category_slug)) {
       throw new Error(`Unknown category_slug in place_categories.csv: ${row.category_slug}`);
     }
-    if (row.is_primary) {
-      primaryByPlace.set(row.place_external_id, (primaryByPlace.get(row.place_external_id) ?? 0) + 1);
-    }
+
+    const existing = categoriesByPlace.get(row.place_external_id) ?? [];
+    existing.push(row);
+    categoriesByPlace.set(row.place_external_id, existing);
   }
 
   for (const row of placeRows) {
-    if (!placeCategoryRows.some((category) => category.place_external_id === row.external_id)) {
+    const placeCategoriesForPlace = categoriesByPlace.get(row.external_id) ?? [];
+
+    if (placeCategoriesForPlace.length === 0) {
       throw new Error(`Place has no categories in place_categories.csv: ${row.external_id}`);
     }
-  }
 
-  for (const [externalId, primaryCount] of primaryByPlace) {
-    if (primaryCount > 1) {
-      throw new Error(`Place has more than one primary category: ${externalId}`);
+    const primaryCount = placeCategoriesForPlace.filter((category) => category.is_primary).length;
+
+    if (primaryCount !== 1) {
+      throw new Error(
+        `Place must have exactly one primary category in place_categories.csv: ${row.external_id}`
+      );
     }
   }
 }

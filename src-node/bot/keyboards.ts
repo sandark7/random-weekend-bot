@@ -41,7 +41,6 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
       .requestLocation(LOCATION_BUTTON_TEXT)
       .row()
       .text(RANDOM_BUTTON_TEXT)
-      .row()
       .text(ROUTE_BUTTON_TEXT)
       .resized();
   }
@@ -49,30 +48,24 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
   if (options.showResultActions) {
     return keyboard
       .text(MORE_NEARBY_BUTTON_TEXT)
-      .row()
       .text(CHANGE_SCENARIO_BUTTON_TEXT)
       .row()
       .text(RANDOM_BUTTON_TEXT)
-      .row()
       .text(ROUTE_BUTTON_TEXT)
       .resized();
   }
 
   return keyboard
     .text(DESIRE_BUTTONS[0])
-    .row()
     .text(DESIRE_BUTTONS[1])
     .row()
     .text(DESIRE_BUTTONS[2])
-    .row()
     .text(DESIRE_BUTTONS[3])
     .row()
     .text(DESIRE_BUTTONS[4])
-    .row()
     .text(DESIRE_BUTTONS[5])
     .row()
     .text(RANDOM_BUTTON_TEXT)
-    .row()
     .text(ROUTE_BUTTON_TEXT)
     .resized();
 }
@@ -80,11 +73,9 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
 export function routeDurationKeyboard(): Keyboard {
   return new Keyboard()
     .text(ROUTE_DURATION_BUTTONS[0])
-    .row()
     .text(ROUTE_DURATION_BUTTONS[1])
     .row()
     .text(ROUTE_DURATION_BUTTONS[2])
-    .row()
     .text(ROUTE_DURATION_BUTTONS[3])
     .resized()
     .oneTime();
