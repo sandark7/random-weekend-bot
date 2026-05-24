@@ -98,6 +98,7 @@ const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
       ["see"],
       ["eat"],
       ["outdoor", "see"],
+      ["see", "outdoor"],
       ["drink", "relax"]
     ],
     [
@@ -106,6 +107,7 @@ const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
       ["outdoor"],
       ["eat"],
       ["see", "outdoor"],
+      ["outdoor", "see"],
       ["drink", "relax"]
     ],
     [
@@ -114,6 +116,7 @@ const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
       ["outdoor"],
       ["eat"],
       ["see"],
+      ["outdoor"],
       ["drink", "relax"]
     ]
   ]

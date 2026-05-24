@@ -41,7 +41,7 @@ describe("formatSuggestion", () => {
     ]);
   });
 
-  it("shows all place categories separated by commas", () => {
+  it("shows primary category and at most one secondary category", () => {
     const message = formatSuggestion(
       makeSuggestion({
         categories: [
@@ -55,7 +55,24 @@ describe("formatSuggestion", () => {
       }
     );
 
-    expect(message.split("\n")[1]).toBe("Ресторан, Завтраки, Вино");
+    expect(message.split("\n")[1]).toBe("Ресторан · Завтраки");
+  });
+
+  it("prefers more specific secondary categories in the label", () => {
+    const message = formatSuggestion(
+      makeSuggestion({
+        categories: [
+          { slug: "restaurant", name: "Ресторан", isPrimary: true },
+          { slug: "bar", name: "Бар", isPrimary: false },
+          { slug: "pub", name: "Паб", isPrimary: false }
+        ]
+      }),
+      {
+        now: new Date("2026-05-23T09:00:00Z")
+      }
+    );
+
+    expect(message.split("\n")[1]).toBe("Ресторан · Паб");
   });
 
   it("shows 00:00-23:59 places as open all day", () => {

@@ -22,7 +22,7 @@ const envSchema = z.object({
   WEBHOOK_URL: optionalUrl,
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(3000),
-  DATABASE_PATH: z.string().default("/app/data/bot.sqlite"),
+  DATABASE_PATH: z.string().default("./data/bot.sqlite"),
   IMPORT_DIR: z.string().default("data/import"),
   SEARCH_RADIUS_METERS: z.coerce.number().int().positive().default(1500),
   GEOCODER_URL: z.string().url().default("https://nominatim.openstreetmap.org/search"),

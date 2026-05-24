@@ -15,6 +15,8 @@ export const MAX_ROUTE_TRANSITION_METERS = Math.floor(
 );
 export const MIN_ROUTE_FILL_RATIO = 0.65;
 export const MAX_ROUTE_OVERRUN_MINUTES = 25;
+const DRINK_ALLOWED_FROM_MINUTES = 17 * 60;
+const BREAKFAST_ALLOWED_UNTIL_MINUTES = 14 * 60;
 
 const DEFAULT_VISIT_DURATION_MINUTES = 45;
 const CATEGORY_VISIT_DURATION_MINUTES: Record<string, number> = {
@@ -44,10 +46,9 @@ type RouteScoringStep = {
 
 export function allowedRouteScenarios(arrival: Date, remainingMinutes: number): PlaceScenarioKey[] {
   const minutes = moscowMinutes(arrival);
-  const morning = minutes < 12 * 60;
   const evening = minutes >= 17 * 60;
   return ROUTE_SCENARIO_POOL.filter((scenarioKey) => {
-    if (scenarioKey === "drink" && morning) return false;
+    if (scenarioKey === "drink" && minutes < DRINK_ALLOWED_FROM_MINUTES) return false;
     if (scenarioKey === "coffee_snack" && evening) return remainingMinutes <= 90;
     return minScenarioVisitDurationMinutes(scenarioKey) <= remainingMinutes + MAX_ROUTE_OVERRUN_MINUTES;
   });
@@ -68,8 +69,8 @@ export function routeCandidateAllowed(
   if (hasCategory(suggestion, "bathhouse") && state.usedBathhouse >= 1) return false;
 
   const minutes = moscowMinutes(arrival);
-  if (minutes < 12 * 60 && hasAnyCategory(suggestion, SCENARIO_CATEGORIES.drink)) return false;
-  if (minutes >= 17 * 60 && hasCategory(suggestion, "breakfast")) return false;
+  if (minutes < DRINK_ALLOWED_FROM_MINUTES && hasAnyCategory(suggestion, SCENARIO_CATEGORIES.drink)) return false;
+  if (minutes >= BREAKFAST_ALLOWED_UNTIL_MINUTES && hasCategory(suggestion, "breakfast")) return false;
 
   return true;
 }
@@ -91,7 +92,7 @@ export function minRouteSteps(durationHours: RouteDurationHours): number {
   if (durationHours <= 2) return 2;
   if (durationHours <= 3) return 3;
   if (durationHours <= 5) return 4;
-  return 5;
+  return 7;
 }
 
 export function walkingMinutes(distanceMeters: number): number {

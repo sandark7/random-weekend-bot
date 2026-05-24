@@ -110,6 +110,7 @@ function validateImportGraph(
   const categorySlugs = new Set(categoryRows.map((row) => row.slug));
   const placeExternalIds = new Set(placeRows.map((row) => row.external_id));
   const categoriesByPlace = new Map<string, PlaceCategoryCsvRow[]>();
+  const placeCategoryPairs = new Set<string>();
 
   for (const row of placeCategoryRows) {
     if (!placeExternalIds.has(row.place_external_id)) {
@@ -119,6 +120,14 @@ function validateImportGraph(
     if (!categorySlugs.has(row.category_slug)) {
       throw new Error(`Unknown category_slug in place_categories.csv: ${row.category_slug}`);
     }
+
+    const pairKey = `${row.place_external_id}::${row.category_slug}`;
+    if (placeCategoryPairs.has(pairKey)) {
+      throw new Error(
+        `Duplicate place/category pair in place_categories.csv: ${row.place_external_id} / ${row.category_slug}`
+      );
+    }
+    placeCategoryPairs.add(pairKey);
 
     const existing = categoriesByPlace.get(row.place_external_id) ?? [];
     existing.push(row);

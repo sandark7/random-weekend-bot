@@ -6,6 +6,22 @@ import {
 } from "../geo/yandexMapsLink.js";
 
 const MAX_DESCRIPTION_LENGTH = 240;
+const SECONDARY_CATEGORY_PRIORITY = [
+  "fine_dining",
+  "breakfast",
+  "quick_bite",
+  "coffee",
+  "cocktail_bar",
+  "wine_bar",
+  "pub",
+  "bar",
+  "activity",
+  "bathhouse",
+  "viewpoint",
+  "landmark",
+  "park",
+  "culture"
+];
 
 export type FormatSuggestionOptions = {
   origin?: {
@@ -52,15 +68,22 @@ export function formatSuggestion(suggestion: PlaceSuggestion, options: FormatSug
 }
 
 function formatCategoryLabel(categories: PlaceSuggestion["categories"]): string | null {
-  const names = new Set<string>();
-  for (const category of categories) {
-    const name = category.name.trim();
-    if (name) {
-      names.add(name);
-    }
+  const primary = categories.find((category) => category.isPrimary) ?? categories[0];
+  if (!primary?.name.trim()) {
+    return null;
   }
 
-  return names.size > 0 ? [...names].join(", ") : null;
+  const secondary = categories
+    .filter((category) => category.slug !== primary.slug && category.name.trim() !== primary.name.trim())
+    .sort((left, right) => secondaryCategoryRank(left.slug) - secondaryCategoryRank(right.slug))[0];
+
+  const labels = [primary.name.trim(), secondary?.name.trim()].filter((label): label is string => Boolean(label));
+  return [...new Set(labels)].slice(0, 2).join(" · ");
+}
+
+function secondaryCategoryRank(slug: string): number {
+  const index = SECONDARY_CATEGORY_PRIORITY.indexOf(slug);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 export function formatDistance(distanceMeters: number): string {

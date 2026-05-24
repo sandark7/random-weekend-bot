@@ -189,6 +189,21 @@ describe("CSV import and repository", () => {
       handle.close();
     }
   });
+
+  it("rejects duplicate place/category pairs before writing to SQLite", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    tempDirs.push(tempDir);
+
+    const importDir = join(tempDir, "import");
+    const config = makeTestConfig(join(tempDir, "bot.sqlite"), importDir);
+
+    writeMinimalImportDir(importDir, "test-place", "Тестовое место", [["restaurant", "Ресторан"]], [
+      ["test-place", "restaurant", "true"],
+      ["test-place", "restaurant", "false"]
+    ]);
+
+    expect(() => importCsv(config)).toThrow(/Duplicate place\/category pair/);
+  });
 });
 
 function makeTestConfig(databasePath: string, importDir = resolve("data/import")): AppConfig {

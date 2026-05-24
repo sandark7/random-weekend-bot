@@ -4,6 +4,7 @@ import { buildRoute } from "../src-node/recommendation/routeBuilder.js";
 import {
   MAX_ROUTE_TRANSITION_METERS,
   placeVisitDurationMinutes,
+  routeCandidateAllowed,
   routeDuration,
   walkingMinutes
 } from "../src-node/recommendation/routeRules.js";
@@ -54,6 +55,30 @@ describe("route planner", () => {
     expect(route?.[0]?.scenario.key).not.toBe("drink");
   });
 
+  it("does not allow drink places before 17:00", () => {
+    const bar = makeSuggestion({ placeId: 1, slug: "bar", lat: 55.75, lon: 37.61 });
+    const state = {
+      lastPrimaryCategory: null,
+      usedFineDining: 0,
+      usedBathhouse: 0
+    };
+
+    expect(routeCandidateAllowed(bar, new Date("2026-05-24T13:59:00Z"), state)).toBe(false);
+    expect(routeCandidateAllowed(bar, new Date("2026-05-24T14:00:00Z"), state)).toBe(true);
+  });
+
+  it("does not allow breakfast places after 14:00", () => {
+    const breakfast = makeSuggestion({ placeId: 1, slug: "breakfast", lat: 55.75, lon: 37.61 });
+    const state = {
+      lastPrimaryCategory: null,
+      usedFineDining: 0,
+      usedBathhouse: 0
+    };
+
+    expect(routeCandidateAllowed(breakfast, new Date("2026-05-24T10:59:00Z"), state)).toBe(true);
+    expect(routeCandidateAllowed(breakfast, new Date("2026-05-24T11:00:00Z"), state)).toBe(false);
+  });
+
   it("does not skip early template slots and start a five-hour route with food", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     const route = buildRoute(makeCategoryRepo({ unavailableCategories: ["coffee", "breakfast", "quick_bite"] }), {
@@ -73,7 +98,7 @@ describe("route planner", () => {
     const route = buildRoute(makeCategoryRepo({ unavailableCategories: ["culture"] }), {
       start: { lat: 55.75, lon: 37.61 },
       radiusMeters: 1500,
-      now: new Date("2026-05-24T10:00:00Z"),
+      now: new Date("2026-05-24T11:00:00Z"),
       excludePlaceIds: [],
       durationHours: 5
     });
@@ -89,7 +114,7 @@ describe("route planner", () => {
     const route = buildRoute(makeCategoryRepo({ unavailableCategories: ["culture"] }), {
       start: { lat: 55.75, lon: 37.61 },
       radiusMeters: 1500,
-      now: new Date("2026-05-24T10:00:00Z"),
+      now: new Date("2026-05-24T11:00:00Z"),
       excludePlaceIds: [],
       durationHours: 5
     });
@@ -100,6 +125,20 @@ describe("route planner", () => {
     expect(eatIndex).toBeGreaterThanOrEqual(0);
     expect(drinkIndex).toBeGreaterThanOrEqual(0);
     expect(eatIndex).toBeLessThan(drinkIndex);
+  });
+
+  it("builds seven-step routes for eight-hour requests", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const route = buildRoute(makeCategoryRepo(), {
+      start: { lat: 55.75, lon: 37.61 },
+      radiusMeters: 1500,
+      now: new Date("2026-05-24T07:00:00Z"),
+      excludePlaceIds: [],
+      durationHours: 8
+    });
+
+    expect(route).not.toBeNull();
+    expect(route).toHaveLength(7);
   });
 
   it("does not repeat the same scenario consecutively", () => {
@@ -134,7 +173,7 @@ describe("route planner", () => {
     );
   });
 
-  it("does not use breakfast places in the evening", () => {
+  it("does not use breakfast places after 14:00", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     const route = buildRoute(makeCategoryRepo(), {
       start: { lat: 55.75, lon: 37.61 },
@@ -208,7 +247,7 @@ describe("route planner", () => {
   });
 
   it("uses the previous picked place as the origin for the next route step", () => {
-    vi.spyOn(Math, "random").mockReturnValue(0);
+    vi.spyOn(Math, "random").mockReturnValue(0.9);
 
     let nextPlaceId = 1;
     const repo = {
