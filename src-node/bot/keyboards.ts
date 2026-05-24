@@ -10,11 +10,11 @@ export const CHANGE_LOCATION_BUTTON_TEXT = "Ввести другой адрес
 
 export const DESIRE_BUTTONS = [
   "🍽 Поесть",
-  "☕ Кофе и перекус",
+  "☕ Кофе / перекус",
   "🍸 Выпить",
-  "🖼 Посмотреть",
-  "🌿 На воздух",
-  "🧖 Отдохнуть"
+  "🧘 Отдохнуть",
+  "🏛 Город",
+  "🎯 Досуг"
 ] as const;
 
 export type DesireButtonText = typeof DESIRE_BUTTONS[number];

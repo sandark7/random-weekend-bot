@@ -34,7 +34,8 @@ const CATEGORY_VISIT_DURATION_MINUTES: Record<string, number> = {
   park: 45,
   viewpoint: 20,
   activity: 90,
-  bathhouse: 150
+  bathhouse: 150,
+  hookah: 90
 };
 
 type RouteScoringStep = {

@@ -21,11 +21,13 @@ describe("route planner", () => {
     const viewpoint = makeSuggestion({ placeId: 2, slug: "viewpoint", lat: 55.75, lon: 37.61 });
     const culture = makeSuggestion({ placeId: 3, slug: "culture", lat: 55.75, lon: 37.61 });
     const park = makeSuggestion({ placeId: 4, slug: "park", lat: 55.75, lon: 37.61 });
+    const hookah = makeSuggestion({ placeId: 5, slug: "hookah", lat: 55.75, lon: 37.61 });
 
     expect(placeVisitDurationMinutes(landmark)).toBe(20);
     expect(placeVisitDurationMinutes(viewpoint)).toBe(20);
     expect(placeVisitDurationMinutes(culture)).toBe(90);
     expect(placeVisitDurationMinutes(park)).toBe(45);
+    expect(placeVisitDurationMinutes(hookah)).toBe(90);
     expect(routeDuration([
       {
         scenario: PLACE_SCENARIOS.see,

@@ -36,56 +36,58 @@ export type RouteStep = {
 type RouteTemplateSlot = readonly PlaceScenarioKey[];
 type RouteTemplate = readonly RouteTemplateSlot[];
 
+const ROUTE_CANDIDATE_POOL_SIZE = 3;
+
 const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
   2: [
     [
       ["coffee_snack"],
-      ["outdoor", "see"]
+      ["see"]
     ],
     [
-      ["outdoor", "see"],
+      ["see"],
       ["coffee_snack"]
     ],
     [
-      ["outdoor", "see"],
+      ["see"],
       ["drink"]
     ]
   ],
   3: [
     [
       ["coffee_snack"],
-      ["outdoor", "see"],
+      ["see"],
       ["eat"]
     ],
     [
-      ["outdoor", "see"],
-      ["coffee_snack", "see"],
+      ["see"],
+      ["coffee_snack"],
       ["eat", "drink"]
     ],
     [
-      ["coffee_snack", "outdoor"],
-      ["outdoor"],
+      ["coffee_snack", "see"],
+      ["activity", "see"],
       ["eat", "drink"]
     ]
   ],
   5: [
     [
       ["coffee_snack"],
-      ["outdoor"],
       ["see"],
+      ["activity", "see"],
+      ["eat"],
+      ["drink"]
+    ],
+    [
+      ["see"],
+      ["coffee_snack"],
+      ["see", "activity"],
       ["eat"],
       ["drink"]
     ],
     [
       ["coffee_snack", "see"],
-      ["outdoor"],
-      ["see", "outdoor"],
-      ["eat"],
-      ["drink"]
-    ],
-    [
-      ["outdoor", "see"],
-      ["coffee_snack"],
+      ["activity"],
       ["see"],
       ["eat"],
       ["drink"]
@@ -94,30 +96,30 @@ const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
   8: [
     [
       ["coffee_snack"],
-      ["outdoor"],
       ["see"],
+      ["activity"],
       ["eat"],
-      ["outdoor", "see"],
-      ["see", "outdoor"],
-      ["drink", "relax"]
+      ["see"],
+      ["activity", "relax"],
+      ["drink", "relax", "see"]
     ],
     [
-      ["coffee_snack", "outdoor"],
+      ["coffee_snack", "see"],
+      ["activity", "see"],
       ["see"],
-      ["outdoor"],
       ["eat"],
-      ["see", "outdoor"],
-      ["outdoor", "see"],
-      ["drink", "relax"]
+      ["activity"],
+      ["see"],
+      ["drink", "relax", "see"]
     ],
     [
       ["coffee_snack"],
       ["see"],
-      ["outdoor"],
+      ["activity"],
       ["eat"],
       ["see"],
-      ["outdoor"],
-      ["drink", "relax"]
+      ["relax"],
+      ["drink", "see"]
     ]
   ]
 };
@@ -252,7 +254,7 @@ function pickRouteStepForSlot(
   }
 ): { scenario: PlaceScenario; suggestion: PlaceSuggestion; walkMinutes: number; visitDurationMinutes: number } | null {
   const allowedScenarioKeys = new Set(allowedRouteScenarios(options.arrival, options.remainingMinutes));
-  const scenarioKeys = shuffle([...options.scenarioKeys]).filter((scenarioKey) => (
+  const scenarioKeys = [...options.scenarioKeys].filter((scenarioKey) => (
     allowedScenarioKeys.has(scenarioKey)
   ));
 
@@ -281,9 +283,10 @@ function pickRouteStepForSlot(
       .filter((suggestion) => (
         walkingMinutes(suggestion.distanceMeters) + placeVisitDurationMinutes(suggestion) <=
         options.remainingMinutes + MAX_ROUTE_OVERRUN_MINUTES
-      ));
+      ))
+      .sort((left, right) => routeCandidateRank(left, scenario) - routeCandidateRank(right, scenario));
 
-    const suggestion = pickRandomSuggestion(candidates.slice(0, 25), []);
+    const suggestion = pickRandomSuggestion(candidates.slice(0, ROUTE_CANDIDATE_POOL_SIZE), []);
     if (suggestion) {
       return {
         scenario,
@@ -295,6 +298,11 @@ function pickRouteStepForSlot(
   }
 
   return null;
+}
+
+function routeCandidateRank(suggestion: PlaceSuggestion, scenario: PlaceScenario): number {
+  const visitDuration = placeVisitDurationMinutes(suggestion);
+  return Math.abs(visitDuration - scenario.durationMinutes) * 10 + suggestion.distanceMeters / 1000;
 }
 
 function routeIsAcceptable(
@@ -321,13 +329,4 @@ function routeIsAcceptable(
 
 function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60 * 1000);
-}
-
-function shuffle<T>(values: T[]): T[] {
-  const copy = [...values];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
-  }
-  return copy;
 }

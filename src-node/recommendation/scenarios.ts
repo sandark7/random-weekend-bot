@@ -1,6 +1,6 @@
 import type { DesireButtonText, RouteDurationButtonText } from "../bot/keyboards.js";
 
-export type PlaceScenarioKey = "eat" | "coffee_snack" | "drink" | "see" | "outdoor" | "relax";
+export type PlaceScenarioKey = "eat" | "coffee_snack" | "drink" | "relax" | "see" | "activity";
 export type RouteDurationHours = 2 | 3 | 5 | 8;
 
 export type PlaceScenario = {
@@ -15,9 +15,9 @@ export const SCENARIO_CATEGORIES = {
   eat: ["restaurant", "fine_dining"],
   coffee_snack: ["coffee", "breakfast", "quick_bite"],
   drink: ["bar", "cocktail_bar", "wine_bar", "pub"],
-  see: ["culture", "landmark"],
-  outdoor: ["park", "viewpoint"],
-  relax: ["bathhouse", "activity"],
+  relax: ["bathhouse", "hookah"],
+  see: ["culture", "landmark", "viewpoint", "park"],
+  activity: ["activity"],
   random: [
     "restaurant",
     "fine_dining",
@@ -30,9 +30,10 @@ export const SCENARIO_CATEGORIES = {
     "pub",
     "culture",
     "landmark",
-    "park",
     "viewpoint",
+    "park",
     "bathhouse",
+    "hookah",
     "activity"
   ]
 } as const satisfies Record<PlaceScenarioKey | "random", readonly string[]>;
@@ -47,8 +48,8 @@ export const PLACE_SCENARIOS: Record<PlaceScenarioKey, PlaceScenario> = {
   },
   coffee_snack: {
     key: "coffee_snack",
-    button: "☕ Кофе и перекус",
-    label: "кофе и перекус",
+    button: "☕ Кофе / перекус",
+    label: "кофе / перекус",
     categories: [...SCENARIO_CATEGORIES.coffee_snack],
     durationMinutes: 45
   },
@@ -59,26 +60,26 @@ export const PLACE_SCENARIOS: Record<PlaceScenarioKey, PlaceScenario> = {
     categories: [...SCENARIO_CATEGORIES.drink],
     durationMinutes: 60
   },
-  see: {
-    key: "see",
-    button: "🖼 Посмотреть",
-    label: "посмотреть",
-    categories: [...SCENARIO_CATEGORIES.see],
-    durationMinutes: 75
-  },
-  outdoor: {
-    key: "outdoor",
-    button: "🌿 На воздух",
-    label: "на воздух",
-    categories: [...SCENARIO_CATEGORIES.outdoor],
-    durationMinutes: 45
-  },
   relax: {
     key: "relax",
-    button: "🧖 Отдохнуть",
+    button: "🧘 Отдохнуть",
     label: "отдохнуть",
     categories: [...SCENARIO_CATEGORIES.relax],
     durationMinutes: 120
+  },
+  see: {
+    key: "see",
+    button: "🏛 Город",
+    label: "город",
+    categories: [...SCENARIO_CATEGORIES.see],
+    durationMinutes: 45
+  },
+  activity: {
+    key: "activity",
+    button: "🎯 Досуг",
+    label: "досуг",
+    categories: [...SCENARIO_CATEGORIES.activity],
+    durationMinutes: 90
   }
 };
 
@@ -96,7 +97,7 @@ export const ROUTE_DURATION_BY_BUTTON = new Map<RouteDurationButtonText, RouteDu
 export const ROUTE_SCENARIO_POOL: PlaceScenarioKey[] = [
   "coffee_snack",
   "see",
-  "outdoor",
+  "activity",
   "eat",
   "drink",
   "relax"

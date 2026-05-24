@@ -13,6 +13,17 @@ import {
 } from "../src-node/bot/keyboards.js";
 
 describe("bot keyboards", () => {
+  it("keeps the desired scenario button order explicit", () => {
+    expect(DESIRE_BUTTONS).toEqual([
+      "🍽 Поесть",
+      "☕ Кофе / перекус",
+      "🍸 Выпить",
+      "🧘 Отдохнуть",
+      "🏛 Город",
+      "🎯 Досуг"
+    ]);
+  });
+
   it("keeps the location button wide and shows main actions by two", () => {
     expect(mainKeyboard()).toMatchObject({
       keyboard: [
