@@ -6,6 +6,7 @@ import {
   MORE_NEARBY_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
   ROUTE_BUTTON_TEXT,
+  ROUTE_FROM_RESULT_BUTTON_TEXT,
   ROUTE_DURATION_BUTTONS,
   locationConfirmationKeyboard,
   mainKeyboard,
@@ -48,8 +49,8 @@ describe("bot keyboards", () => {
   it("shows result actions by two after a suggestion", () => {
     expect(mainKeyboard({ hasResolvedLocation: true, showResultActions: true })).toMatchObject({
       keyboard: [
-        [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: CHANGE_SCENARIO_BUTTON_TEXT }],
-        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+        [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: ROUTE_FROM_RESULT_BUTTON_TEXT }],
+        [{ text: CHANGE_SCENARIO_BUTTON_TEXT }, { text: RANDOM_BUTTON_TEXT }]
       ]
     });
   });

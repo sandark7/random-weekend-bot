@@ -14,10 +14,17 @@ export type PendingConfirmation = {
   createdAt: number;
 };
 
+export type RouteStart = {
+  placeId?: number;
+  lat: number;
+  lon: number;
+  label: string;
+};
+
 export type LastAction =
   | { type: "scenario"; scenario: PlaceScenarioKey }
   | { type: "random" }
-  | { type: "route"; durationHours: RouteDurationHours };
+  | { type: "route"; durationHours: RouteDurationHours; routeStart?: RouteStart };
 
 export type LastLocation = {
   lat: number;
@@ -26,6 +33,8 @@ export type LastLocation = {
   radiusMeters: number;
   recentPlaceIds: number[];
   lastAction: LastAction | null;
+  lastSuggestedPlace: RouteStart | null;
+  pendingRouteStart: RouteStart | null;
   hasShownSuggestion: boolean;
   updatedAt: number;
 };

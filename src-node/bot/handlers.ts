@@ -24,6 +24,7 @@ import {
   MORE_NEARBY_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
   ROUTE_BUTTON_TEXT,
+  ROUTE_FROM_RESULT_BUTTON_TEXT,
   ROUTE_DURATION_BUTTONS,
   type RouteDurationButtonText,
   locationConfirmationKeyboard,
@@ -36,7 +37,8 @@ import {
   appendRecentPlaceIds,
   type LastAction,
   type LastLocation,
-  type PendingConfirmation
+  type PendingConfirmation,
+  type RouteStart
 } from "./sessionState.js";
 
 type RegisterBotHandlersOptions = {
@@ -129,6 +131,8 @@ export function registerBotHandlers(
     lastLocations.set(chatId, {
       ...lastLocation,
       lastAction: null,
+      lastSuggestedPlace: null,
+      pendingRouteStart: null,
       hasShownSuggestion: false,
       updatedAt: Date.now()
     });
@@ -168,7 +172,40 @@ export function registerBotHandlers(
       return;
     }
 
+    lastLocations.set(chatId, {
+      ...lastLocation,
+      pendingRouteStart: null,
+      updatedAt: Date.now()
+    });
+
     await askRouteDuration(ctx);
+  });
+
+  bot.hears(ROUTE_FROM_RESULT_BUTTON_TEXT, async (ctx) => {
+    const chatId = ctx.chat?.id;
+    const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
+
+    if (!lastLocation) {
+      await askForLocation(ctx, lastLocations);
+      return;
+    }
+
+    const routeStart = lastLocation.lastSuggestedPlace;
+
+    if (!routeStart) {
+      await ctx.reply("Сначала выбери место, от которого можно собрать маршрут.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    lastLocations.set(chatId, {
+      ...lastLocation,
+      pendingRouteStart: routeStart,
+      updatedAt: Date.now()
+    });
+
+    await askRouteDuration(ctx, routeStart.label);
   });
 
   bot.hears([...ROUTE_DURATION_BUTTONS], async (ctx) => {
@@ -184,7 +221,14 @@ export function registerBotHandlers(
       return;
     }
 
-    await sendRoute(ctx, repo, lastLocations, lastLocation, durationHours);
+    await sendRoute(
+      ctx,
+      repo,
+      lastLocations,
+      lastLocation,
+      durationHours,
+      lastLocation.pendingRouteStart ?? undefined
+    );
   });
 
   bot.hears(LOCATION_BUTTON_TEXT, async (ctx) => {
@@ -364,6 +408,8 @@ async function rememberLocationAndAskScenario(
       radiusMeters: options.radiusMeters,
       recentPlaceIds: [],
       lastAction: null,
+      lastSuggestedPlace: null,
+      pendingRouteStart: null,
       hasShownSuggestion: false,
       updatedAt: Date.now()
     });
@@ -401,8 +447,12 @@ async function askForLocation(
   );
 }
 
-async function askRouteDuration(ctx: Context): Promise<void> {
-  await ctx.reply("На сколько часов собрать маршрут?", {
+async function askRouteDuration(ctx: Context, fromLabel?: string): Promise<void> {
+  const text = fromLabel
+    ? `На сколько часов собрать маршрут от места «${fromLabel}»?`
+    : "На сколько часов собрать маршрут?";
+
+  await ctx.reply(text, {
     reply_markup: routeDurationKeyboard()
   });
 }
@@ -435,7 +485,7 @@ async function repeatLastAction(
   }
 
   if (action.type === "route") {
-    await sendRoute(ctx, repo, lastLocations, lastLocation, action.durationHours);
+    await sendRoute(ctx, repo, lastLocations, lastLocation, action.durationHours, action.routeStart);
     return;
   }
 
@@ -456,10 +506,17 @@ async function sendRoute(
   repo: PlaceRepository,
   lastLocations: Map<number, LastLocation>,
   lastLocation: LastLocation,
-  durationHours: RouteDurationHours
+  durationHours: RouteDurationHours,
+  routeStart?: RouteStart
 ): Promise<void> {
+  const start = routeStart ?? {
+    lat: lastLocation.lat,
+    lon: lastLocation.lon,
+    label: lastLocation.label
+  };
+
   const route = buildRoute(repo, {
-    start: { lat: lastLocation.lat, lon: lastLocation.lon },
+    start: { lat: start.lat, lon: start.lon },
     radiusMeters: lastLocation.radiusMeters,
     now: new Date(),
     excludePlaceIds: lastLocation.recentPlaceIds,
@@ -481,13 +538,14 @@ async function sendRoute(
         lastLocation.recentPlaceIds,
         route.map((step) => step.suggestion.placeId)
       ),
-      lastAction: { type: "route", durationHours },
+      lastAction: { type: "route", durationHours, routeStart },
+      pendingRouteStart: null,
       hasShownSuggestion: true,
       updatedAt: Date.now()
     });
   }
 
-  await ctx.reply(formatRoute(durationHours, lastLocation.label, route), {
+  await ctx.reply(formatRoute(durationHours, start.label, route), {
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
     reply_markup: mainKeyboardFor(ctx, lastLocations)
@@ -523,7 +581,7 @@ async function sendNearbySuggestion(
   if (!result) {
     const fallbackRadiusMeters = Math.max(options.radiusMeters * 2, 2500);
     await ctx.reply(
-      `Рядом в радиусе ${fallbackRadiusMeters} м пока нет открытых мест под этот сценарий. Можно сменить категорию или попробовать случайный выбор.`,
+      `Рядом в радиусе ${fallbackRadiusMeters} м пока нет открытых мест под этот сценарий. Можно сменить категорию или попробовать «Выбери сам».`,
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
     );
     return;
@@ -541,6 +599,13 @@ async function sendNearbySuggestion(
       radiusMeters: options.radiusMeters,
       recentPlaceIds,
       lastAction: options.action ?? { type: "random" },
+      lastSuggestedPlace: {
+        placeId: result.suggestion.placeId,
+        lat: result.suggestion.lat,
+        lon: result.suggestion.lon,
+        label: result.suggestion.name
+      },
+      pendingRouteStart: null,
       hasShownSuggestion: true,
       updatedAt: Date.now()
     });
