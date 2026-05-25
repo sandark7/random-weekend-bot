@@ -5,6 +5,7 @@ import { runMigrations } from "./db/migrate.js";
 import { PlaceRepository } from "./db/placeRepository.js";
 import { NominatimGeocoder } from "./geo/geocoder.js";
 import { LocationResolver } from "./geo/locationResolver.js";
+import { importCsv } from "./import/importCsv.js";
 import { createLogger } from "./logger.js";
 import { createServer } from "./server/createServer.js";
 
@@ -15,6 +16,8 @@ async function main(): Promise<void> {
 
   const migrationResult = runMigrations(config);
   logger.info(migrationResult, "sqlite_migrations_complete");
+  const importResult = importCsv(config);
+  logger.info(importResult, "csv_import_complete");
 
   const database = openDatabase(config);
   const repo = new PlaceRepository(database.sqlite, config);
