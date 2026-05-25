@@ -9,7 +9,7 @@ import {
   walkingMinutes
 } from "../src-node/recommendation/routeRules.js";
 import { PLACE_SCENARIOS } from "../src-node/recommendation/scenarios.js";
-import type { PlaceSuggestion } from "../src-node/shared/types.js";
+import type { OpeningHoursJson, PlaceSuggestion } from "../src-node/shared/types.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -248,6 +248,45 @@ describe("route planner", () => {
     expect(route?.every((step) => step.suggestion.distanceMeters <= MAX_ROUTE_TRANSITION_METERS)).toBe(true);
   });
 
+  it("skips route candidates that close before the planned visit ends", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    let nextPlaceId = 1;
+    const closingSoonHours: OpeningHoursJson = {
+      timezone: "Europe/Moscow",
+      weekly: {
+        sun: [{ from: "10:00", to: "13:10" }]
+      }
+    };
+    const repo = {
+      findNearby: (options: { lat: number; lon: number; categorySlug?: string }) => [
+        makeSuggestion({
+          placeId: nextPlaceId++,
+          slug: options.categorySlug ?? "restaurant",
+          lat: options.lat + 0.001,
+          lon: options.lon + 0.001,
+          openingHoursJson: closingSoonHours
+        }),
+        makeSuggestion({
+          placeId: nextPlaceId++,
+          slug: options.categorySlug ?? "restaurant",
+          lat: options.lat + 0.001,
+          lon: options.lon + 0.001
+        })
+      ]
+    } as unknown as PlaceRepository;
+
+    const route = buildRoute(repo, {
+      start: { lat: 55.75, lon: 37.61 },
+      radiusMeters: 1500,
+      now: new Date("2026-05-24T10:00:00Z"),
+      excludePlaceIds: [],
+      durationHours: 3
+    });
+
+    expect(route).not.toBeNull();
+    expect(route?.every((step) => step.suggestion.placeId % 2 === 0)).toBe(true);
+  });
+
   it("uses the previous picked place as the origin for the next route step", () => {
     vi.spyOn(Math, "random").mockReturnValue(0.9);
 
@@ -309,6 +348,7 @@ function makeSuggestion(options: {
   lat: number;
   lon: number;
   distanceMeters?: number;
+  openingHoursJson?: OpeningHoursJson;
 }): PlaceSuggestion {
   return {
     placeId: options.placeId,
@@ -320,7 +360,7 @@ function makeSuggestion(options: {
     lon: options.lon,
     distanceMeters: options.distanceMeters ?? 100,
     openingHoursText: "Ежедневно 00:00-23:59",
-    openingHoursJson: {
+    openingHoursJson: options.openingHoursJson ?? {
       timezone: "Europe/Moscow",
       weekly: {
         sun: [{ from: "00:00", to: "23:59" }]

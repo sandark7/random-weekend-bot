@@ -4,6 +4,7 @@ import {
   buildYandexMapsPointLink,
   buildYandexMapsWalkingRouteLink
 } from "../geo/yandexMapsLink.js";
+import { walkingMinutes } from "../geo/walking.js";
 
 const MAX_DESCRIPTION_LENGTH = 240;
 const SECONDARY_CATEGORY_PRIORITY = [
@@ -88,12 +89,11 @@ function secondaryCategoryRank(slug: string): number {
 }
 
 export function formatDistance(distanceMeters: number): string {
-  const walkingMinutes = Math.max(1, Math.round(distanceMeters / 80));
   const distance = distanceMeters < 1000
     ? `${Math.max(distanceMeters, 1)} м`
     : `${(distanceMeters / 1000).toFixed(1)} км`;
 
-  return `${distance} · ~${walkingMinutes} мин`;
+  return `${distance} · ~${walkingMinutes(distanceMeters)} мин`;
 }
 
 function formatOpeningStatus(suggestion: PlaceSuggestion, now = new Date()): string | null {

@@ -26,6 +26,8 @@ export type LastAction =
   | { type: "random" }
   | { type: "route"; durationHours: RouteDurationHours; routeStart?: RouteStart };
 
+export type LastResultKind = "place" | "route" | null;
+
 export type LastLocation = {
   lat: number;
   lon: number;
@@ -35,7 +37,7 @@ export type LastLocation = {
   lastAction: LastAction | null;
   lastSuggestedPlace: RouteStart | null;
   pendingRouteStart: RouteStart | null;
-  hasShownSuggestion: boolean;
+  lastResultKind: LastResultKind;
   updatedAt: number;
 };
 

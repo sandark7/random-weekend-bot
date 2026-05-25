@@ -5,6 +5,8 @@ export const MORE_NEARBY_BUTTON_TEXT = "🔁 Ещё вариант";
 export const RANDOM_BUTTON_TEXT = "🎲 Выбери сам";
 export const ROUTE_BUTTON_TEXT = "🧭 Собрать маршрут";
 export const ROUTE_FROM_RESULT_BUTTON_TEXT = "🧭 Маршрут отсюда";
+export const REBUILD_ROUTE_BUTTON_TEXT = "🔁 Пересобрать";
+export const NEW_ROUTE_BUTTON_TEXT = "🧭 Новый маршрут";
 export const CHANGE_SCENARIO_BUTTON_TEXT = "🔄 Сменить категорию";
 export const CONFIRM_LOCATION_BUTTON_TEXT = "Да";
 export const CHANGE_LOCATION_BUTTON_TEXT = "Ввести другой адрес";
@@ -31,7 +33,7 @@ export type RouteDurationButtonText = typeof ROUTE_DURATION_BUTTONS[number];
 
 export type MainKeyboardOptions = {
   hasResolvedLocation?: boolean;
-  showResultActions?: boolean;
+  resultKind?: "place" | "route" | null;
 };
 
 export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
@@ -41,13 +43,17 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
     return keyboard.requestLocation(LOCATION_BUTTON_TEXT).resized();
   }
 
-  if (options.showResultActions) {
+  if (options.resultKind === "place") {
     return keyboard
       .text(MORE_NEARBY_BUTTON_TEXT)
       .text(ROUTE_FROM_RESULT_BUTTON_TEXT)
-      .row()
-      .text(CHANGE_SCENARIO_BUTTON_TEXT)
-      .text(RANDOM_BUTTON_TEXT)
+      .resized();
+  }
+
+  if (options.resultKind === "route") {
+    return keyboard
+      .text(REBUILD_ROUTE_BUTTON_TEXT)
+      .text(NEW_ROUTE_BUTTON_TEXT)
       .resized();
   }
 

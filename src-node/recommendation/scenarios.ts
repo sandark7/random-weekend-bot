@@ -32,8 +32,6 @@ export const SCENARIO_CATEGORIES = {
     "landmark",
     "viewpoint",
     "park",
-    "bathhouse",
-    "hookah",
     "activity"
   ]
 } as const satisfies Record<PlaceScenarioKey | "random", readonly string[]>;

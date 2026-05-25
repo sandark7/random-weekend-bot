@@ -1,7 +1,8 @@
 import type { PlaceRepository } from "../db/placeRepository.js";
 import type { Coordinates } from "../geo/distance.js";
+import { isOpenForDuration } from "../shared/openingHours.js";
 import type { PlaceSuggestion } from "../shared/types.js";
-import { findNearbyByCategories, pickRandomSuggestion } from "./nearby.js";
+import { findNearbyByCategories } from "./nearby.js";
 import {
   PLACE_SCENARIOS,
   type PlaceScenario,
@@ -45,8 +46,16 @@ const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
       ["see"]
     ],
     [
+      ["coffee_snack"],
+      ["activity", "see"]
+    ],
+    [
       ["see"],
       ["coffee_snack"]
+    ],
+    [
+      ["see"],
+      ["eat", "activity"]
     ],
     [
       ["see"],
@@ -279,20 +288,35 @@ function pickRouteStepForSlot(
         usedFineDining: options.usedFineDining,
         usedBathhouse: options.usedBathhouse
       }))
-      .filter((suggestion) => walkingMinutes(suggestion.distanceMeters) <= MAX_ROUTE_WALK_MINUTES)
-      .filter((suggestion) => (
-        walkingMinutes(suggestion.distanceMeters) + placeVisitDurationMinutes(suggestion) <=
-        options.remainingMinutes + MAX_ROUTE_OVERRUN_MINUTES
-      ))
-      .sort((left, right) => routeCandidateRank(left, scenario) - routeCandidateRank(right, scenario));
-
-    const suggestion = pickRandomSuggestion(candidates.slice(0, ROUTE_CANDIDATE_POOL_SIZE), []);
-    if (suggestion) {
-      return {
-        scenario,
+      .map((suggestion) => ({
         suggestion,
         walkMinutes: walkingMinutes(suggestion.distanceMeters),
         visitDurationMinutes: placeVisitDurationMinutes(suggestion)
+      }))
+      .filter((candidate) => candidate.walkMinutes <= MAX_ROUTE_WALK_MINUTES)
+      .filter((candidate) => (
+        candidate.walkMinutes + candidate.visitDurationMinutes <=
+        options.remainingMinutes + MAX_ROUTE_OVERRUN_MINUTES
+      ))
+      .filter((candidate) => (
+        isOpenForDuration(
+          candidate.suggestion.openingHoursJson,
+          options.arrival,
+          candidate.visitDurationMinutes
+        ) === true
+      ))
+      .sort((left, right) => (
+        routeCandidateRank(left.suggestion, scenario) - routeCandidateRank(right.suggestion, scenario)
+      ));
+
+    const topCandidates = candidates.slice(0, ROUTE_CANDIDATE_POOL_SIZE);
+    const picked = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+    if (picked) {
+      return {
+        scenario,
+        suggestion: picked.suggestion,
+        walkMinutes: picked.walkMinutes,
+        visitDurationMinutes: picked.visitDurationMinutes
       };
     }
   }

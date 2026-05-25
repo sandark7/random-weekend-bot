@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  CHANGE_SCENARIO_BUTTON_TEXT,
   DESIRE_BUTTONS,
   LOCATION_BUTTON_TEXT,
   MORE_NEARBY_BUTTON_TEXT,
+  NEW_ROUTE_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
+  REBUILD_ROUTE_BUTTON_TEXT,
   ROUTE_BUTTON_TEXT,
   ROUTE_FROM_RESULT_BUTTON_TEXT,
   ROUTE_DURATION_BUTTONS,
@@ -46,11 +47,18 @@ describe("bot keyboards", () => {
     });
   });
 
-  it("shows result actions by two after a suggestion", () => {
-    expect(mainKeyboard({ hasResolvedLocation: true, showResultActions: true })).toMatchObject({
+  it("shows place result actions by two after a suggestion", () => {
+    expect(mainKeyboard({ hasResolvedLocation: true, resultKind: "place" })).toMatchObject({
       keyboard: [
-        [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: ROUTE_FROM_RESULT_BUTTON_TEXT }],
-        [{ text: CHANGE_SCENARIO_BUTTON_TEXT }, { text: RANDOM_BUTTON_TEXT }]
+        [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: ROUTE_FROM_RESULT_BUTTON_TEXT }]
+      ]
+    });
+  });
+
+  it("shows route result actions without route-from-here ambiguity", () => {
+    expect(mainKeyboard({ hasResolvedLocation: true, resultKind: "route" })).toMatchObject({
+      keyboard: [
+        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: NEW_ROUTE_BUTTON_TEXT }]
       ]
     });
   });

@@ -1,5 +1,12 @@
 import type { PlaceSuggestion } from "../shared/types.js";
 import {
+  MAX_ROUTE_TRANSITION_METERS,
+  MAX_ROUTE_WALK_MINUTES,
+  WALKING_METERS_PER_MINUTE,
+  WALKING_ROUTE_FACTOR,
+  walkingMinutes
+} from "../geo/walking.js";
+import {
   ROUTE_SCENARIO_POOL,
   SCENARIO_CATEGORIES,
   type PlaceScenario,
@@ -7,13 +14,15 @@ import {
   type RouteDurationHours
 } from "./scenarios.js";
 
-export const MAX_ROUTE_WALK_MINUTES = 20;
-export const WALKING_METERS_PER_MINUTE = 70;
-export const WALKING_ROUTE_FACTOR = 1.25;
-export const MAX_ROUTE_TRANSITION_METERS = Math.floor(
-  (MAX_ROUTE_WALK_MINUTES * WALKING_METERS_PER_MINUTE) / WALKING_ROUTE_FACTOR
-);
-export const MIN_ROUTE_FILL_RATIO = 0.65;
+export {
+  MAX_ROUTE_TRANSITION_METERS,
+  MAX_ROUTE_WALK_MINUTES,
+  WALKING_METERS_PER_MINUTE,
+  WALKING_ROUTE_FACTOR,
+  walkingMinutes
+};
+
+export const MIN_ROUTE_FILL_RATIO = 0.8;
 export const MAX_ROUTE_OVERRUN_MINUTES = 25;
 const DRINK_ALLOWED_FROM_MINUTES = 17 * 60;
 const BREAKFAST_ALLOWED_UNTIL_MINUTES = 14 * 60;
@@ -94,10 +103,6 @@ export function minRouteSteps(durationHours: RouteDurationHours): number {
   if (durationHours <= 3) return 3;
   if (durationHours <= 5) return 4;
   return 7;
-}
-
-export function walkingMinutes(distanceMeters: number): number {
-  return Math.max(1, Math.round((distanceMeters / WALKING_METERS_PER_MINUTE) * WALKING_ROUTE_FACTOR));
 }
 
 export function placeVisitDurationMinutes(suggestion: PlaceSuggestion): number {

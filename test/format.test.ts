@@ -22,7 +22,7 @@ describe("formatSuggestion", () => {
       now: new Date("2026-05-23T09:00:00Z")
     });
 
-    expect(message).toContain("🚶 420 м · ~5 мин");
+    expect(message).toContain("🚶 420 м · ~8 мин");
     expect(message).toContain("rtext=55.75%2C37.61%7E55.7605%2C37.6465");
     expect(message).toContain(">Покровка, 17</a>");
     expect(message).not.toContain("Построить пеший маршрут в Яндекс Картах");

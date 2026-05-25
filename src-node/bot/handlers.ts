@@ -11,6 +11,7 @@ import {
   ROUTE_DURATION_BY_BUTTON,
   SCENARIO_BY_BUTTON,
   SCENARIO_CATEGORIES,
+  type PlaceScenarioKey,
   type RouteDurationHours
 } from "../recommendation/scenarios.js";
 import { escapeHtml, formatSuggestion } from "./format.js";
@@ -22,7 +23,9 @@ import {
   type DesireButtonText,
   LOCATION_BUTTON_TEXT,
   MORE_NEARBY_BUTTON_TEXT,
+  NEW_ROUTE_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
+  REBUILD_ROUTE_BUTTON_TEXT,
   ROUTE_BUTTON_TEXT,
   ROUTE_FROM_RESULT_BUTTON_TEXT,
   ROUTE_DURATION_BUTTONS,
@@ -55,6 +58,24 @@ const LOCATION_INPUT_HELP = [
   "- метро Китай-город",
   "- Дубининская 59"
 ].join("\n");
+
+const SCENARIO_INTRO: Record<PlaceScenarioKey, (locationLabel: string) => string> = {
+  eat: (locationLabel) => `Ищу, где поесть, рядом с: ${locationLabel}`,
+  coffee_snack: (locationLabel) => `Ищу кофе или перекус рядом с: ${locationLabel}`,
+  drink: (locationLabel) => `Ищу, где выпить, рядом с: ${locationLabel}`,
+  relax: (locationLabel) => `Ищу место для отдыха рядом с: ${locationLabel}`,
+  see: (locationLabel) => `Ищу городскую точку рядом с: ${locationLabel}`,
+  activity: (locationLabel) => `Ищу досуг рядом с: ${locationLabel}`
+};
+
+const SCENARIO_REPEAT_INTRO: Record<PlaceScenarioKey, (locationLabel: string) => string> = {
+  eat: (locationLabel) => `Ещё вариант, где поесть, рядом с: ${locationLabel}`,
+  coffee_snack: (locationLabel) => `Ещё кофе или перекус рядом с: ${locationLabel}`,
+  drink: (locationLabel) => `Ещё вариант, где выпить, рядом с: ${locationLabel}`,
+  relax: (locationLabel) => `Ещё место для отдыха рядом с: ${locationLabel}`,
+  see: (locationLabel) => `Ещё городская точка рядом с: ${locationLabel}`,
+  activity: (locationLabel) => `Ещё досуг рядом с: ${locationLabel}`
+};
 
 export function registerBotHandlers(
   bot: Bot,
@@ -120,6 +141,25 @@ export function registerBotHandlers(
     await repeatLastAction(ctx, repo, lastLocations, lastLocation);
   });
 
+  bot.hears(REBUILD_ROUTE_BUTTON_TEXT, async (ctx) => {
+    const chatId = ctx.chat?.id;
+    const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
+
+    if (!lastLocation) {
+      await askForLocation(ctx, lastLocations);
+      return;
+    }
+
+    if (lastLocation.lastAction?.type !== "route") {
+      await ctx.reply("Сначала собери маршрут, а потом я смогу его пересобрать.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    await repeatLastAction(ctx, repo, lastLocations, lastLocation);
+  });
+
   bot.hears(CHANGE_SCENARIO_BUTTON_TEXT, async (ctx) => {
     const chatId = ctx.chat?.id;
     const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
@@ -133,7 +173,7 @@ export function registerBotHandlers(
       lastAction: null,
       lastSuggestedPlace: null,
       pendingRouteStart: null,
-      hasShownSuggestion: false,
+      lastResultKind: null,
       updatedAt: Date.now()
     });
     await sendScenarioMenu(ctx, lastLocations, lastLocation.label);
@@ -160,11 +200,28 @@ export function registerBotHandlers(
       locationLabel: lastLocation.label,
       categorySlugs: scenario.categories,
       action: { type: "scenario", scenario: scenario.key },
-      intro: `Ищу, где ${scenario.label}, рядом с: ${lastLocation.label}`
+      intro: formatScenarioIntro(scenario.key, lastLocation.label)
     });
   });
 
   bot.hears(ROUTE_BUTTON_TEXT, async (ctx) => {
+    const chatId = ctx.chat?.id;
+    const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
+    if (!lastLocation) {
+      await askForLocation(ctx, lastLocations);
+      return;
+    }
+
+    lastLocations.set(chatId, {
+      ...lastLocation,
+      pendingRouteStart: null,
+      updatedAt: Date.now()
+    });
+
+    await askRouteDuration(ctx);
+  });
+
+  bot.hears(NEW_ROUTE_BUTTON_TEXT, async (ctx) => {
     const chatId = ctx.chat?.id;
     const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
     if (!lastLocation) {
@@ -410,7 +467,7 @@ async function rememberLocationAndAskScenario(
       lastAction: null,
       lastSuggestedPlace: null,
       pendingRouteStart: null,
-      hasShownSuggestion: false,
+      lastResultKind: null,
       updatedAt: Date.now()
     });
   }
@@ -457,6 +514,14 @@ async function askRouteDuration(ctx: Context, fromLabel?: string): Promise<void>
   });
 }
 
+function formatScenarioIntro(scenarioKey: PlaceScenarioKey, locationLabel: string): string {
+  return SCENARIO_INTRO[scenarioKey](locationLabel);
+}
+
+function formatScenarioRepeatIntro(scenarioKey: PlaceScenarioKey, locationLabel: string): string {
+  return SCENARIO_REPEAT_INTRO[scenarioKey](locationLabel);
+}
+
 async function repeatLastAction(
   ctx: Context,
   repo: PlaceRepository,
@@ -479,7 +544,7 @@ async function repeatLastAction(
       categorySlugs: scenario.categories,
       excludeRecentPlaces: true,
       action,
-      intro: `Ещё вариант: ${scenario.label}, рядом с: ${lastLocation.label}`
+      intro: formatScenarioRepeatIntro(scenario.key, lastLocation.label)
     });
     return;
   }
@@ -539,8 +604,9 @@ async function sendRoute(
         route.map((step) => step.suggestion.placeId)
       ),
       lastAction: { type: "route", durationHours, routeStart },
+      lastSuggestedPlace: null,
       pendingRouteStart: null,
-      hasShownSuggestion: true,
+      lastResultKind: "route",
       updatedAt: Date.now()
     });
   }
@@ -606,7 +672,7 @@ async function sendNearbySuggestion(
         label: result.suggestion.name
       },
       pendingRouteStart: null,
-      hasShownSuggestion: true,
+      lastResultKind: "place",
       updatedAt: Date.now()
     });
   }
@@ -655,6 +721,6 @@ function mainKeyboardFor(ctx: Context, lastLocations: Map<number, LastLocation>)
   const lastLocation = ctx.chat?.id ? lastLocations.get(ctx.chat.id) : undefined;
   return mainKeyboard({
     hasResolvedLocation: Boolean(lastLocation),
-    showResultActions: lastLocation?.hasShownSuggestion === true
+    resultKind: lastLocation?.lastResultKind ?? null
   });
 }

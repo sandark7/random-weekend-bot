@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getCurrentOpeningWindow,
+  isOpenForDuration,
   isOpenNow,
   parseOpeningHoursJson
 } from "../src-node/shared/openingHours.js";
@@ -92,6 +93,30 @@ describe("opening hours", () => {
       closesNextDay: false,
       allDay: true
     });
+  });
+
+  it("checks that a place stays open for the planned visit duration", () => {
+    const hours: OpeningHoursJson = {
+      timezone: "Europe/Moscow",
+      weekly: {
+        sat: [{ from: "10:00", to: "22:00" }]
+      }
+    };
+
+    expect(isOpenForDuration(hours, new Date("2026-05-23T17:30:00Z"), 90)).toBe(true);
+    expect(isOpenForDuration(hours, new Date("2026-05-23T18:50:00Z"), 90)).toBe(false);
+  });
+
+  it("checks visit duration inside overnight intervals", () => {
+    const hours: OpeningHoursJson = {
+      timezone: "Europe/Moscow",
+      weekly: {
+        sat: [{ from: "18:00", to: "02:00", next_day: true }]
+      }
+    };
+
+    expect(isOpenForDuration(hours, new Date("2026-05-23T21:00:00Z"), 120)).toBe(true);
+    expect(isOpenForDuration(hours, new Date("2026-05-23T22:30:00Z"), 120)).toBe(false);
   });
 
   it("validates parsed JSON", () => {

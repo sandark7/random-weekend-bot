@@ -111,6 +111,33 @@ export function isOpenNow(hours: OpeningHoursJson | null, now = new Date()): boo
   return getCurrentOpeningWindow(hours, now) !== null;
 }
 
+export function isOpenForDuration(
+  hours: OpeningHoursJson | null,
+  now = new Date(),
+  durationMinutes: number
+): boolean | null {
+  if (!hours) {
+    return null;
+  }
+
+  const window = getCurrentOpeningWindow(hours, now);
+  if (!window) {
+    return false;
+  }
+
+  if (window.allDay) {
+    return true;
+  }
+
+  const { minutes } = getMoscowDateParts(now);
+  let closesAtMinutes = toMinutes(window.closesAt);
+  if (window.closesNextDay || closesAtMinutes <= minutes) {
+    closesAtMinutes += 24 * 60;
+  }
+
+  return closesAtMinutes - minutes >= durationMinutes;
+}
+
 function getMoscowDateParts(date: Date): { weekday: Weekday; minutes: number } {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Europe/Moscow",
