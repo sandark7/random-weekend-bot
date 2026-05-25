@@ -2,7 +2,7 @@ import { Keyboard } from "grammy";
 
 export const LOCATION_BUTTON_TEXT = "📍 Поделиться локацией";
 export const MORE_NEARBY_BUTTON_TEXT = "🔁 Ещё вариант";
-export const RANDOM_BUTTON_TEXT = "🎲 Случайный выбор";
+export const RANDOM_BUTTON_TEXT = "🎲 Выбери сам";
 export const ROUTE_BUTTON_TEXT = "🧭 Собрать маршрут";
 export const CHANGE_SCENARIO_BUTTON_TEXT = "🔄 Сменить категорию";
 export const CONFIRM_LOCATION_BUTTON_TEXT = "Да";
@@ -37,12 +37,7 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
   const keyboard = new Keyboard();
 
   if (!options.hasResolvedLocation) {
-    return keyboard
-      .requestLocation(LOCATION_BUTTON_TEXT)
-      .row()
-      .text(RANDOM_BUTTON_TEXT)
-      .text(ROUTE_BUTTON_TEXT)
-      .resized();
+    return keyboard.requestLocation(LOCATION_BUTTON_TEXT).resized();
   }
 
   if (options.showResultActions) {

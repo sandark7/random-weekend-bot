@@ -46,6 +46,14 @@ type RegisterBotHandlersOptions = {
   logger: AppLogger;
 };
 
+const LOCATION_INPUT_HELP = [
+  "Можно отправить геолокацию с телефона или написать адрес обычным сообщением:",
+  "- Тверская 7",
+  "- Патриаршие пруды",
+  "- метро Китай-город",
+  "- Дубининская 59"
+].join("\n");
+
 export function registerBotHandlers(
   bot: Bot,
   { config, repo, locationResolver, logger }: RegisterBotHandlersOptions
@@ -80,7 +88,7 @@ export function registerBotHandlers(
       [
         "Привет! Я Random Weekend. Помогу выбрать, куда пойти рядом: поесть, выпить, посмотреть что-то красивое или собрать прогулочный маршрут.",
         "",
-        "Отправь локацию с телефона или напиши адрес обычным сообщением вроде «Покровка 17». Можно и сразу довериться случайному выбору."
+        LOCATION_INPUT_HELP
       ].join("\n"),
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
     );
@@ -99,10 +107,7 @@ export function registerBotHandlers(
     const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
 
     if (!lastLocation) {
-      await ctx.reply(
-        "Сначала напиши адрес обычным сообщением, например «Покровка 17», или отправь геолокацию с телефона.",
-        { reply_markup: mainKeyboardFor(ctx, lastLocations) }
-      );
+      await askForLocation(ctx, lastLocations);
       return;
     }
 
@@ -187,7 +192,11 @@ export function registerBotHandlers(
       pendingConfirmations.delete(ctx.chat.id);
     }
     await ctx.reply(
-      "Если ты в Telegram Desktop, эта кнопка может не открыть отправку геолокации. Напиши адрес текстом, например «Мясницкая 13», или нажми кнопку с телефона.",
+      [
+        "Если ты в Telegram Desktop, эта кнопка может не открыть отправку геолокации.",
+        "",
+        LOCATION_INPUT_HELP
+      ].join("\n"),
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
     );
   });
@@ -383,7 +392,11 @@ async function askForLocation(
   lastLocations: Map<number, LastLocation>
 ): Promise<void> {
   await ctx.reply(
-    "Сначала отправь локацию с телефона или напиши адрес, например «Покровка 17». Так я смогу собрать варианты рядом.",
+    [
+      "Сначала нужно понять, откуда искать рядом.",
+      "",
+      LOCATION_INPUT_HELP
+    ].join("\n"),
     { reply_markup: mainKeyboardFor(ctx, lastLocations) }
   );
 }
@@ -434,7 +447,7 @@ async function repeatLastAction(
     categorySlugs: SCENARIO_CATEGORIES.random,
     excludeRecentPlaces: true,
     action,
-    intro: `Ещё случайный выбор рядом с: ${lastLocation.label}`
+    intro: `Ещё выбираю рядом с: ${lastLocation.label}`
   });
 }
 
@@ -564,26 +577,13 @@ async function sendRandomSuggestion(
       locationLabel: lastLocation.label,
       categorySlugs: SCENARIO_CATEGORIES.random,
       action: { type: "random" },
-      intro: `Случайный выбор рядом с: ${lastLocation.label}`,
+      intro: `Выбираю рядом с: ${lastLocation.label}`,
       excludeRecentPlaces: true
     });
     return;
   }
 
-  const suggestion = repo.randomOpenPlace();
-
-  if (!suggestion) {
-    await ctx.reply("В базе пока нет открытых мест. Сначала импортируем CSV, потом я оживу по-настоящему.", {
-      reply_markup: mainKeyboardFor(ctx, lastLocations)
-    });
-    return;
-  }
-
-  await ctx.reply(formatSuggestion(suggestion), {
-    parse_mode: "HTML",
-    link_preview_options: { is_disabled: true },
-    reply_markup: mainKeyboardFor(ctx, lastLocations)
-  });
+  await askForLocation(ctx, lastLocations);
 }
 
 function mainKeyboardFor(ctx: Context, lastLocations: Map<number, LastLocation>) {

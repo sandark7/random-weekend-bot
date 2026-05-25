@@ -24,12 +24,13 @@ describe("bot keyboards", () => {
     ]);
   });
 
-  it("keeps the location button wide and shows main actions by two", () => {
+  it("uses the choose-it-for-me random button copy", () => {
+    expect(RANDOM_BUTTON_TEXT).toBe("🎲 Выбери сам");
+  });
+
+  it("shows only location sharing before resolving a location", () => {
     expect(mainKeyboard()).toMatchObject({
-      keyboard: [
-        [{ text: LOCATION_BUTTON_TEXT, request_location: true }],
-        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
-      ]
+      keyboard: [[{ text: LOCATION_BUTTON_TEXT, request_location: true }]]
     });
   });
 
