@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlaceRepository } from "../src-node/db/placeRepository.js";
-import { buildRoute } from "../src-node/recommendation/routeBuilder.js";
+import {
+  buildRoute,
+  recalculateRouteSteps,
+  replaceRouteStep
+} from "../src-node/recommendation/routeBuilder.js";
 import {
   MAX_ROUTE_TRANSITION_METERS,
   placeVisitDurationMinutes,
@@ -318,6 +322,90 @@ describe("route planner", () => {
       lat: route?.[0]?.suggestion.lat,
       lon: route?.[0]?.suggestion.lon
     });
+  });
+
+  it("replaces only the selected route step and recalculates following transitions", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const start = { lat: 55.75, lon: 37.61 };
+    const originalRoute = recalculateRouteSteps(
+      [
+        {
+          scenario: PLACE_SCENARIOS.coffee_snack,
+          suggestion: makeSuggestion({ placeId: 1, slug: "coffee", lat: 55.751, lon: 37.611 })
+        },
+        {
+          scenario: PLACE_SCENARIOS.eat,
+          suggestion: makeSuggestion({ placeId: 2, slug: "restaurant", lat: 55.752, lon: 37.612 })
+        },
+        {
+          scenario: PLACE_SCENARIOS.drink,
+          suggestion: makeSuggestion({ placeId: 3, slug: "bar", lat: 55.753, lon: 37.613 })
+        }
+      ],
+      start,
+      new Date("2026-05-24T14:00:00Z")
+    );
+    const repo = {
+      findNearby: (options: { categorySlug?: string }) => (
+        options.categorySlug === "restaurant"
+          ? [makeSuggestion({ placeId: 99, slug: "restaurant", lat: 55.7525, lon: 37.6125 })]
+          : []
+      )
+    } as unknown as PlaceRepository;
+
+    const result = replaceRouteStep(repo, {
+      route: originalRoute,
+      stepIndex: 1,
+      radiusMeters: 1500,
+      excludePlaceIds: [],
+      durationHours: 3
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.route.map((step) => step.suggestion.placeId)).toEqual([1, 99, 3]);
+    expect(result?.route[0]?.suggestion.placeId).toBe(originalRoute[0]?.suggestion.placeId);
+    expect(result?.route[2]?.suggestion.placeId).toBe(originalRoute[2]?.suggestion.placeId);
+    expect(result?.route[2]?.origin).toEqual({
+      lat: result?.route[1]?.suggestion.lat,
+      lon: result?.route[1]?.suggestion.lon
+    });
+  });
+
+  it("does not replace a route step when the next transition becomes too long", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const originalRoute = recalculateRouteSteps(
+      [
+        {
+          scenario: PLACE_SCENARIOS.coffee_snack,
+          suggestion: makeSuggestion({ placeId: 1, slug: "coffee", lat: 55.751, lon: 37.611 })
+        },
+        {
+          scenario: PLACE_SCENARIOS.eat,
+          suggestion: makeSuggestion({ placeId: 2, slug: "restaurant", lat: 55.752, lon: 37.612 })
+        },
+        {
+          scenario: PLACE_SCENARIOS.drink,
+          suggestion: makeSuggestion({ placeId: 3, slug: "bar", lat: 55.753, lon: 37.613 })
+        }
+      ],
+      { lat: 55.75, lon: 37.61 },
+      new Date("2026-05-24T14:00:00Z")
+    );
+    const repo = {
+      findNearby: (options: { categorySlug?: string }) => (
+        options.categorySlug === "restaurant"
+          ? [makeSuggestion({ placeId: 99, slug: "restaurant", lat: 55.9, lon: 37.9, distanceMeters: 100 })]
+          : []
+      )
+    } as unknown as PlaceRepository;
+
+    expect(replaceRouteStep(repo, {
+      route: originalRoute,
+      stepIndex: 1,
+      radiusMeters: 1500,
+      excludePlaceIds: [],
+      durationHours: 3
+    })).toBeNull();
   });
 });
 

@@ -1,5 +1,8 @@
 import type { PlaceRepository } from "../db/placeRepository.js";
-import type { Coordinates } from "../geo/distance.js";
+import {
+  haversineDistanceMeters,
+  type Coordinates
+} from "../geo/distance.js";
 import { isOpenForDuration } from "../shared/openingHours.js";
 import type { PlaceSuggestion } from "../shared/types.js";
 import { findNearbyByCategories } from "./nearby.js";
@@ -32,6 +35,14 @@ export type RouteStep = {
   arrival: Date;
   walkMinutes: number;
   visitDurationMinutes: number;
+};
+
+type RouteStepSeed = Pick<RouteStep, "scenario" | "suggestion">;
+
+export type ReplaceRouteStepResult = {
+  route: RouteStep[];
+  oldStep: RouteStep;
+  newStep: RouteStep;
 };
 
 type RouteTemplateSlot = readonly PlaceScenarioKey[];
@@ -165,6 +176,161 @@ export function buildRoute(
   }
 
   return attempts.sort((left, right) => routeScore(right, targetMinutes) - routeScore(left, targetMinutes))[0] ?? null;
+}
+
+export function replaceRouteStep(
+  repo: PlaceRepository,
+  options: {
+    route: RouteStep[];
+    stepIndex: number;
+    radiusMeters: number;
+    excludePlaceIds: number[];
+    durationHours: RouteDurationHours;
+  }
+): ReplaceRouteStepResult | null {
+  const oldStep = options.route[options.stepIndex];
+  if (!oldStep) {
+    return null;
+  }
+
+  const start = options.route[0]?.origin;
+  const startedAt = options.route[0]?.arrival;
+  if (!start || !startedAt) {
+    return null;
+  }
+
+  const previousStep = options.route[options.stepIndex - 1];
+  const nextStep = options.route[options.stepIndex + 1];
+  const origin = previousStep
+    ? { lat: previousStep.suggestion.lat, lon: previousStep.suggestion.lon }
+    : start;
+  const excludedPlaceIds = new Set([
+    ...options.excludePlaceIds,
+    ...options.route.map((step) => step.suggestion.placeId)
+  ]);
+  const otherSteps = options.route.filter((_, index) => index !== options.stepIndex);
+  const usedFineDining = otherSteps.filter((step) => hasCategory(step.suggestion, "fine_dining")).length;
+  const usedBathhouse = otherSteps.filter((step) => hasCategory(step.suggestion, "bathhouse")).length;
+  const lastPrimaryCategory = previousStep ? primaryCategorySlug(previousStep.suggestion) : null;
+  const nextPrimaryCategory = nextStep ? primaryCategorySlug(nextStep.suggestion) : null;
+  const transitionRadiusMeters = Math.min(options.radiusMeters, MAX_ROUTE_TRANSITION_METERS);
+  const scenario = oldStep.scenario;
+
+  const candidates = findNearbyByCategories(repo, {
+    lat: origin.lat,
+    lon: origin.lon,
+    radiusMeters: transitionRadiusMeters,
+    categorySlugs: scenario.categories,
+    now: oldStep.arrival,
+    limit: 500
+  })
+    .filter((suggestion) => !excludedPlaceIds.has(suggestion.placeId))
+    .filter((suggestion) => routeCandidateAllowed(suggestion, oldStep.arrival, {
+      lastPrimaryCategory,
+      usedFineDining,
+      usedBathhouse
+    }))
+    .filter((suggestion) => primaryCategorySlug(suggestion) !== nextPrimaryCategory)
+    .map((suggestion) => {
+      const walkMinutes = walkingMinutes(suggestion.distanceMeters);
+      const visitDurationMinutes = placeVisitDurationMinutes(suggestion);
+      const nextWalkMinutes = nextStep
+        ? walkingMinutes(haversineDistanceMeters(
+            { lat: suggestion.lat, lon: suggestion.lon },
+            { lat: nextStep.suggestion.lat, lon: nextStep.suggestion.lon }
+          ))
+        : 0;
+
+      return {
+        suggestion,
+        walkMinutes,
+        visitDurationMinutes,
+        nextWalkMinutes
+      };
+    })
+    .filter((candidate) => candidate.walkMinutes <= MAX_ROUTE_WALK_MINUTES)
+    .filter((candidate) => candidate.nextWalkMinutes <= MAX_ROUTE_WALK_MINUTES)
+    .filter((candidate) => (
+      isOpenForDuration(candidate.suggestion.openingHoursJson, oldStep.arrival, candidate.visitDurationMinutes) === true
+    ))
+    .sort((left, right) => (
+      replacementCandidateRank(left.suggestion, left.visitDurationMinutes, oldStep) -
+      replacementCandidateRank(right.suggestion, right.visitDurationMinutes, oldStep)
+    ));
+
+  const topCandidates = candidates.slice(0, ROUTE_CANDIDATE_POOL_SIZE);
+  const picked = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+  if (!picked) {
+    return null;
+  }
+
+  const seeds = options.route.map((step, index): RouteStepSeed => ({
+    scenario: step.scenario,
+    suggestion: index === options.stepIndex ? picked.suggestion : step.suggestion
+  }));
+  const route = recalculateRouteSteps(seeds, start, startedAt);
+
+  if (!routeIsAcceptable(route, options.durationHours * 60, options.durationHours)) {
+    return null;
+  }
+
+  if (!route.every((step) => (
+    step.walkMinutes <= MAX_ROUTE_WALK_MINUTES &&
+    isOpenForDuration(step.suggestion.openingHoursJson, step.arrival, step.visitDurationMinutes) === true
+  ))) {
+    return null;
+  }
+
+  const newStep = route[options.stepIndex];
+  if (!newStep) {
+    return null;
+  }
+
+  return {
+    route,
+    oldStep,
+    newStep
+  };
+}
+
+export function recalculateRouteSteps(
+  steps: RouteStepSeed[],
+  start: Coordinates,
+  startedAt: Date
+): RouteStep[] {
+  const route: RouteStep[] = [];
+  let origin = start;
+  let elapsedMinutes = 0;
+
+  for (const step of steps) {
+    const distanceMeters = Math.round(
+      haversineDistanceMeters(origin, { lat: step.suggestion.lat, lon: step.suggestion.lon })
+    );
+    const suggestion = {
+      ...step.suggestion,
+      distanceMeters
+    };
+    const walkMinutes = walkingMinutes(distanceMeters);
+    const visitDurationMinutes = placeVisitDurationMinutes(suggestion);
+    const arrival = addMinutes(startedAt, elapsedMinutes);
+
+    route.push({
+      scenario: step.scenario,
+      suggestion,
+      origin,
+      arrival,
+      walkMinutes,
+      visitDurationMinutes
+    });
+
+    elapsedMinutes += walkMinutes + visitDurationMinutes;
+    origin = {
+      lat: suggestion.lat,
+      lon: suggestion.lon
+    };
+  }
+
+  return route;
 }
 
 function buildRouteFromTemplate(
@@ -327,6 +493,14 @@ function pickRouteStepForSlot(
 function routeCandidateRank(suggestion: PlaceSuggestion, scenario: PlaceScenario): number {
   const visitDuration = placeVisitDurationMinutes(suggestion);
   return Math.abs(visitDuration - scenario.durationMinutes) * 10 + suggestion.distanceMeters / 1000;
+}
+
+function replacementCandidateRank(
+  suggestion: PlaceSuggestion,
+  visitDurationMinutes: number,
+  oldStep: RouteStep
+): number {
+  return Math.abs(visitDurationMinutes - oldStep.visitDurationMinutes) * 10 + suggestion.distanceMeters / 1000;
 }
 
 function routeIsAcceptable(

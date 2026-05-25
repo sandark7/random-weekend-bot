@@ -29,7 +29,7 @@ export function formatLocationIntro(label: string): string {
   return `Ищу рядом с: ${label}`;
 }
 
-function formatRouteDuration(durationMinutes: number): string {
+export function formatRouteDuration(durationMinutes: number): string {
   const roundedMinutes = Math.max(15, Math.round(durationMinutes / 5) * 5);
   const hours = Math.floor(roundedMinutes / 60);
   const minutes = roundedMinutes % 60;

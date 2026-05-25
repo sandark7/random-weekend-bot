@@ -1,5 +1,6 @@
 import type { ResolvedLocation } from "../geo/locationResolver.js";
 import type { PlaceScenarioKey, RouteDurationHours } from "../recommendation/scenarios.js";
+import type { PlaceSuggestion } from "../shared/types.js";
 
 const RECENT_PLACE_HISTORY_LIMIT = 30;
 
@@ -28,6 +29,21 @@ export type LastAction =
 
 export type LastResultKind = "place" | "route" | null;
 
+export type StoredRouteStep = {
+  placeId: number;
+  name: string;
+  scenarioKey: PlaceScenarioKey;
+  suggestion: PlaceSuggestion;
+};
+
+export type StoredRoute = {
+  durationHours: RouteDurationHours;
+  routeStart?: RouteStart;
+  start: RouteStart;
+  startedAtIso: string;
+  steps: StoredRouteStep[];
+};
+
 export type LastLocation = {
   lat: number;
   lon: number;
@@ -37,6 +53,9 @@ export type LastLocation = {
   lastAction: LastAction | null;
   lastSuggestedPlace: RouteStart | null;
   pendingRouteStart: RouteStart | null;
+  lastRoute: StoredRoute | null;
+  pendingRouteReplacement: boolean;
+  pendingRouteReplacementExcludePlaceId: number | null;
   lastResultKind: LastResultKind;
   updatedAt: number;
 };

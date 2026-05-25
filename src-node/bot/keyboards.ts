@@ -6,7 +6,10 @@ export const RANDOM_BUTTON_TEXT = "🎲 Выбери сам";
 export const ROUTE_BUTTON_TEXT = "🧭 Собрать маршрут";
 export const ROUTE_FROM_RESULT_BUTTON_TEXT = "🧭 Маршрут отсюда";
 export const REBUILD_ROUTE_BUTTON_TEXT = "🔁 Пересобрать";
-export const NEW_ROUTE_BUTTON_TEXT = "🧭 Новый маршрут";
+export const REPLACE_ROUTE_STEP_BUTTON_TEXT = "🔄 Заменить пункт";
+export const REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT = "🔁 Пересобрать без этого места";
+export const KEEP_ROUTE_BUTTON_TEXT = "↩️ Оставить как было";
+export const BACK_BUTTON_TEXT = "↩️ Назад";
 export const CHANGE_SCENARIO_BUTTON_TEXT = "🔄 Сменить категорию";
 export const CONFIRM_LOCATION_BUTTON_TEXT = "Да";
 export const CHANGE_LOCATION_BUTTON_TEXT = "Ввести другой адрес";
@@ -47,13 +50,19 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
     return keyboard
       .text(MORE_NEARBY_BUTTON_TEXT)
       .text(ROUTE_FROM_RESULT_BUTTON_TEXT)
+      .row()
+      .text(CHANGE_SCENARIO_BUTTON_TEXT)
+      .text(RANDOM_BUTTON_TEXT)
       .resized();
   }
 
   if (options.resultKind === "route") {
     return keyboard
       .text(REBUILD_ROUTE_BUTTON_TEXT)
-      .text(NEW_ROUTE_BUTTON_TEXT)
+      .text(REPLACE_ROUTE_STEP_BUTTON_TEXT)
+      .row()
+      .text(RANDOM_BUTTON_TEXT)
+      .text(ROUTE_BUTTON_TEXT)
       .resized();
   }
 
@@ -79,6 +88,28 @@ export function routeDurationKeyboard(): Keyboard {
     .row()
     .text(ROUTE_DURATION_BUTTONS[2])
     .text(ROUTE_DURATION_BUTTONS[3])
+    .resized()
+    .oneTime();
+}
+
+export function routeStepReplacementKeyboard(labels: string[]): Keyboard {
+  const keyboard = new Keyboard();
+
+  labels.forEach((label, index) => {
+    keyboard.text(`${index + 1}. ${label}`).row();
+  });
+
+  return keyboard
+    .text(BACK_BUTTON_TEXT)
+    .resized()
+    .oneTime();
+}
+
+export function routeReplacementFallbackKeyboard(): Keyboard {
+  return new Keyboard()
+    .text(REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT)
+    .row()
+    .text(KEEP_ROUTE_BUTTON_TEXT)
     .resized()
     .oneTime();
 }

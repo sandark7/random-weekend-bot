@@ -4,8 +4,18 @@ import type { PlaceRepository } from "../db/placeRepository.js";
 import type { LocationResolver } from "../geo/locationResolver.js";
 import type { AppLogger } from "../logger.js";
 import { findNearbySuggestion } from "../recommendation/nearby.js";
-import { buildRoute } from "../recommendation/routeBuilder.js";
-import { formatLocationIntro, formatRoute } from "../recommendation/routeFormatter.js";
+import {
+  buildRoute,
+  recalculateRouteSteps,
+  replaceRouteStep,
+  type RouteStep
+} from "../recommendation/routeBuilder.js";
+import {
+  formatLocationIntro,
+  formatRoute,
+  formatRouteDuration
+} from "../recommendation/routeFormatter.js";
+import { routeDuration } from "../recommendation/routeRules.js";
 import {
   PLACE_SCENARIOS,
   ROUTE_DURATION_BY_BUTTON,
@@ -20,19 +30,24 @@ import {
   CHANGE_LOCATION_BUTTON_TEXT,
   CONFIRM_LOCATION_BUTTON_TEXT,
   DESIRE_BUTTONS,
+  BACK_BUTTON_TEXT,
+  KEEP_ROUTE_BUTTON_TEXT,
   type DesireButtonText,
   LOCATION_BUTTON_TEXT,
   MORE_NEARBY_BUTTON_TEXT,
-  NEW_ROUTE_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
   REBUILD_ROUTE_BUTTON_TEXT,
+  REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT,
+  REPLACE_ROUTE_STEP_BUTTON_TEXT,
   ROUTE_BUTTON_TEXT,
   ROUTE_FROM_RESULT_BUTTON_TEXT,
   ROUTE_DURATION_BUTTONS,
   type RouteDurationButtonText,
   locationConfirmationKeyboard,
   mainKeyboard,
-  routeDurationKeyboard
+  routeDurationKeyboard,
+  routeReplacementFallbackKeyboard,
+  routeStepReplacementKeyboard
 } from "./keyboards.js";
 import { parseCoordinates } from "./parseCoordinates.js";
 import {
@@ -41,7 +56,8 @@ import {
   type LastAction,
   type LastLocation,
   type PendingConfirmation,
-  type RouteStart
+  type RouteStart,
+  type StoredRoute
 } from "./sessionState.js";
 
 type RegisterBotHandlersOptions = {
@@ -173,6 +189,9 @@ export function registerBotHandlers(
       lastAction: null,
       lastSuggestedPlace: null,
       pendingRouteStart: null,
+      lastRoute: null,
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: null,
       lastResultKind: null,
       updatedAt: Date.now()
     });
@@ -215,27 +234,37 @@ export function registerBotHandlers(
     lastLocations.set(chatId, {
       ...lastLocation,
       pendingRouteStart: null,
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: null,
       updatedAt: Date.now()
     });
 
     await askRouteDuration(ctx);
   });
 
-  bot.hears(NEW_ROUTE_BUTTON_TEXT, async (ctx) => {
+  bot.hears(REPLACE_ROUTE_STEP_BUTTON_TEXT, async (ctx) => {
     const chatId = ctx.chat?.id;
     const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
-    if (!lastLocation) {
-      await askForLocation(ctx, lastLocations);
+
+    if (!lastLocation?.lastRoute) {
+      await ctx.reply("Сначала нужно собрать маршрут, а потом уже менять в нём пункты.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
       return;
     }
 
     lastLocations.set(chatId, {
       ...lastLocation,
-      pendingRouteStart: null,
+      pendingRouteReplacement: true,
+      pendingRouteReplacementExcludePlaceId: null,
       updatedAt: Date.now()
     });
 
-    await askRouteDuration(ctx);
+    await ctx.reply("Какой пункт заменить?", {
+      reply_markup: routeStepReplacementKeyboard(
+        lastLocation.lastRoute.steps.map((step) => step.name)
+      )
+    });
   });
 
   bot.hears(ROUTE_FROM_RESULT_BUTTON_TEXT, async (ctx) => {
@@ -259,6 +288,8 @@ export function registerBotHandlers(
     lastLocations.set(chatId, {
       ...lastLocation,
       pendingRouteStart: routeStart,
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: null,
       updatedAt: Date.now()
     });
 
@@ -318,8 +349,91 @@ export function registerBotHandlers(
   bot.on("message:text", async (ctx) => {
     const chatId = ctx.chat?.id;
     const pending = chatId ? pendingConfirmations.get(chatId) : undefined;
+    const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
     if (pending && Date.now() - pending.createdAt > 10 * 60 * 1000) {
       pendingConfirmations.delete(chatId);
+    }
+
+    if (ctx.message.text === BACK_BUTTON_TEXT && lastLocation?.pendingRouteReplacement) {
+      lastLocations.set(chatId, {
+        ...lastLocation,
+        pendingRouteReplacement: false,
+        pendingRouteReplacementExcludePlaceId: null,
+        updatedAt: Date.now()
+      });
+
+      await ctx.reply("Ок, оставляем маршрут как есть.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    if (ctx.message.text === KEEP_ROUTE_BUTTON_TEXT && lastLocation?.pendingRouteReplacementExcludePlaceId) {
+      lastLocations.set(chatId, {
+        ...lastLocation,
+        pendingRouteReplacement: false,
+        pendingRouteReplacementExcludePlaceId: null,
+        updatedAt: Date.now()
+      });
+
+      await ctx.reply("Ок, оставляем маршрут как есть.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    if (
+      ctx.message.text === REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT &&
+      lastLocation?.lastRoute &&
+      lastLocation.pendingRouteReplacementExcludePlaceId
+    ) {
+      const routeLocation = {
+        ...lastLocation,
+        pendingRouteReplacement: false,
+        pendingRouteReplacementExcludePlaceId: null,
+        updatedAt: Date.now()
+      };
+      lastLocations.set(chatId, routeLocation);
+      await sendRoute(
+        ctx,
+        repo,
+        lastLocations,
+        routeLocation,
+        lastLocation.lastRoute.durationHours,
+        lastLocation.lastRoute.routeStart,
+        [lastLocation.pendingRouteReplacementExcludePlaceId]
+      );
+      return;
+    }
+
+    if (ctx.message.text === REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT) {
+      await ctx.reply("Сначала выбери пункт маршрута, который нужно исключить.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    if (ctx.message.text === KEEP_ROUTE_BUTTON_TEXT) {
+      await ctx.reply("Ок, оставляем маршрут как есть.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    const replaceStepMatch = /^(\d+)\.\s+/.exec(ctx.message.text);
+    if (replaceStepMatch && lastLocation?.pendingRouteReplacement && lastLocation.lastRoute) {
+      const stepIndex = Number(replaceStepMatch[1]) - 1;
+      await replaceRouteStepAndReply(ctx, repo, lastLocations, lastLocation, stepIndex);
+      return;
+    }
+
+    if (lastLocation?.pendingRouteReplacement) {
+      await ctx.reply("Выбери пункт маршрута кнопкой или нажми «Назад».", {
+        reply_markup: routeStepReplacementKeyboard(
+          lastLocation.lastRoute?.steps.map((step) => step.name) ?? []
+        )
+      });
+      return;
     }
 
     if (ctx.message.text === CHANGE_LOCATION_BUTTON_TEXT) {
@@ -467,6 +581,9 @@ async function rememberLocationAndAskScenario(
       lastAction: null,
       lastSuggestedPlace: null,
       pendingRouteStart: null,
+      lastRoute: null,
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: null,
       lastResultKind: null,
       updatedAt: Date.now()
     });
@@ -572,19 +689,21 @@ async function sendRoute(
   lastLocations: Map<number, LastLocation>,
   lastLocation: LastLocation,
   durationHours: RouteDurationHours,
-  routeStart?: RouteStart
+  routeStart?: RouteStart,
+  extraExcludePlaceIds: number[] = []
 ): Promise<void> {
   const start = routeStart ?? {
     lat: lastLocation.lat,
     lon: lastLocation.lon,
     label: lastLocation.label
   };
+  const startedAt = new Date();
 
   const route = buildRoute(repo, {
     start: { lat: start.lat, lon: start.lon },
     radiusMeters: lastLocation.radiusMeters,
-    now: new Date(),
-    excludePlaceIds: lastLocation.recentPlaceIds,
+    now: startedAt,
+    excludePlaceIds: [...lastLocation.recentPlaceIds, ...extraExcludePlaceIds],
     durationHours
   });
 
@@ -606,6 +725,9 @@ async function sendRoute(
       lastAction: { type: "route", durationHours, routeStart },
       lastSuggestedPlace: null,
       pendingRouteStart: null,
+      lastRoute: toStoredRoute(route, durationHours, start, startedAt, routeStart),
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: null,
       lastResultKind: "route",
       updatedAt: Date.now()
     });
@@ -672,6 +794,9 @@ async function sendNearbySuggestion(
         label: result.suggestion.name
       },
       pendingRouteStart: null,
+      lastRoute: null,
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: null,
       lastResultKind: "place",
       updatedAt: Date.now()
     });
@@ -690,6 +815,129 @@ async function sendNearbySuggestion(
     link_preview_options: { is_disabled: true },
     reply_markup: mainKeyboardFor(ctx, lastLocations)
   });
+}
+
+async function replaceRouteStepAndReply(
+  ctx: Context,
+  repo: PlaceRepository,
+  lastLocations: Map<number, LastLocation>,
+  lastLocation: LastLocation,
+  stepIndex: number
+): Promise<void> {
+  const chatId = ctx.chat?.id;
+  const storedRoute = lastLocation.lastRoute;
+  if (!chatId || !storedRoute) {
+    await ctx.reply("Сначала нужно собрать маршрут, а потом уже менять в нём пункты.", {
+      reply_markup: mainKeyboardFor(ctx, lastLocations)
+    });
+    return;
+  }
+
+  if (stepIndex < 0 || stepIndex >= storedRoute.steps.length) {
+    await ctx.reply("Не нашёл такой пункт в маршруте. Выбери пункт кнопкой.", {
+      reply_markup: routeStepReplacementKeyboard(storedRoute.steps.map((step) => step.name))
+    });
+    return;
+  }
+
+  const route = restoreStoredRoute(storedRoute);
+  const oldStoredStep = storedRoute.steps[stepIndex];
+  const result = replaceRouteStep(repo, {
+    route,
+    stepIndex,
+    radiusMeters: lastLocation.radiusMeters,
+    excludePlaceIds: lastLocation.recentPlaceIds,
+    durationHours: storedRoute.durationHours
+  });
+
+  if (!result) {
+    lastLocations.set(chatId, {
+      ...lastLocation,
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: oldStoredStep?.placeId ?? null,
+      updatedAt: Date.now()
+    });
+
+    await ctx.reply(
+      "Не смог заменить только этот пункт так, чтобы маршрут остался нормальным. Могу пересобрать весь маршрут без него или оставить как было.",
+      { reply_markup: routeReplacementFallbackKeyboard() }
+    );
+    return;
+  }
+
+  const updatedRoute = toStoredRoute(
+    result.route,
+    storedRoute.durationHours,
+    storedRoute.start,
+    new Date(storedRoute.startedAtIso),
+    storedRoute.routeStart
+  );
+  lastLocations.set(chatId, {
+    ...lastLocation,
+    recentPlaceIds: appendRecentPlaceId(lastLocation.recentPlaceIds, result.newStep.suggestion.placeId),
+    lastAction: {
+      type: "route",
+      durationHours: storedRoute.durationHours,
+      routeStart: storedRoute.routeStart
+    },
+    lastSuggestedPlace: null,
+    pendingRouteStart: null,
+    lastRoute: updatedRoute,
+    pendingRouteReplacement: false,
+    pendingRouteReplacementExcludePlaceId: null,
+    lastResultKind: "route",
+    updatedAt: Date.now()
+  });
+
+  const status = [
+    `Заменил пункт ${stepIndex + 1}.`,
+    "",
+    `Было: ${escapeHtml(result.oldStep.suggestion.name)}`,
+    `Стало: ${escapeHtml(result.newStep.suggestion.name)}`,
+    "",
+    `Маршрут теперь примерно на ${escapeHtml(formatRouteDuration(routeDuration(result.route)))}.`
+  ].join("\n");
+
+  await ctx.reply(
+    `${status}\n\n${formatRoute(storedRoute.durationHours, storedRoute.start.label, result.route)}`,
+    {
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+      reply_markup: mainKeyboardFor(ctx, lastLocations)
+    }
+  );
+}
+
+function toStoredRoute(
+  route: RouteStep[],
+  durationHours: RouteDurationHours,
+  start: RouteStart,
+  startedAt: Date,
+  routeStart?: RouteStart
+): StoredRoute {
+  return {
+    durationHours,
+    routeStart,
+    start,
+    startedAtIso: startedAt.toISOString(),
+    steps: route.map((step) => ({
+      placeId: step.suggestion.placeId,
+      name: step.suggestion.name,
+      scenarioKey: step.scenario.key,
+      suggestion: step.suggestion
+    }))
+  };
+}
+
+function restoreStoredRoute(route: StoredRoute): RouteStep[] {
+  return recalculateRouteSteps(
+    route.steps.map((step) => ({
+      scenario: PLACE_SCENARIOS[step.scenarioKey],
+      suggestion: step.suggestion
+    })),
+    { lat: route.start.lat, lon: route.start.lon },
+    new Date(route.startedAtIso)
+  );
 }
 
 async function sendRandomSuggestion(
