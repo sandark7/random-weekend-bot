@@ -2,7 +2,7 @@
 
 Telegram-бот для случайных прогулок, кофе, ужинов и культурных остановок в центре Москвы.
 
-Текущий runtime сделан под слабый VPS: TypeScript, grammY, Fastify, SQLite, Drizzle, Zod и pino. SQLite лежит в Docker volume по пути `/app/data/bot.sqlite`, а места сначала собираются в CSV и импортируются одной командой.
+Текущий runtime сделан под слабый VPS: TypeScript, grammY, Fastify, SQLite, Drizzle, Zod и pino. SQLite лежит в Docker volume по пути `/app/data/bot.sqlite`, а места собираются в CSV и импортируются в runtime-базу при старте приложения.
 
 ## OpenSpec Flow
 
@@ -45,7 +45,7 @@ CSV-файлы лежат в `data/import/`:
 - `places.csv`
 - `place_categories.csv`
 
-Импорт создаёт базу, применяет миграции и делает upsert данных:
+Приложение импортирует CSV при старте. Для ручной проверки импорт можно запустить отдельно:
 
 ```bash
 npm run db:import
@@ -85,12 +85,17 @@ GEOCODER_USER_AGENT=citydatebot/0.2 your-email@example.com
 Собрать и запустить контейнер:
 
 ```bash
-docker compose build
-docker compose run --rm bot npm run db:import
-docker compose up bot
+docker compose up -d --build bot
 ```
 
-SQLite сохранится в volume `citydatebot-sqlite-data`.
+При старте контейнер применит миграции и импортирует `data/import/*.csv` в SQLite. SQLite сохранится в volume `citydatebot-sqlite-data`.
+
+Проверить запуск:
+
+```bash
+docker compose logs --tail=80 bot
+docker compose exec -T bot node -e "fetch('http://127.0.0.1:3000/healthz').then(async r => console.log(r.status, await r.text()))"
+```
 
 Webhook-режим для сервера:
 
