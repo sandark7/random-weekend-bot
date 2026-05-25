@@ -76,10 +76,7 @@ type RouteMode = "new" | "rebuild" | "rebuild_without_place";
 
 const LOCATION_INPUT_HELP = [
   "Можно отправить геолокацию с телефона или написать адрес обычным сообщением:",
-  "- Тверская 7",
-  "- Патриаршие пруды",
-  "- метро Китай-город",
-  "- Дубининская 59"
+  "Например, Пятницкая 59, Патриаршие пруды или метро Китай-город"
 ].join("\n");
 
 const SCENARIO_INTRO: Record<PlaceScenarioKey, (locationLabel: string) => string> = {
@@ -87,8 +84,8 @@ const SCENARIO_INTRO: Record<PlaceScenarioKey, (locationLabel: string) => string
   coffee_snack: (locationLabel) => `Ищу кофе или перекус рядом с: ${locationLabel}`,
   drink: (locationLabel) => `Ищу, где выпить, рядом с: ${locationLabel}`,
   relax: (locationLabel) => `Ищу место для отдыха рядом с: ${locationLabel}`,
-  see: (locationLabel) => `Ищу городскую точку рядом с: ${locationLabel}`,
-  activity: (locationLabel) => `Ищу досуг рядом с: ${locationLabel}`
+  see: (locationLabel) => `Ищу посмотреть что-то красивое рядом с: ${locationLabel}`,
+  activity: (locationLabel) => `Ищу активность рядом с: ${locationLabel}`
 };
 
 const SCENARIO_REPEAT_INTRO: Record<PlaceScenarioKey, (locationLabel: string) => string> = {
@@ -96,8 +93,8 @@ const SCENARIO_REPEAT_INTRO: Record<PlaceScenarioKey, (locationLabel: string) =>
   coffee_snack: (locationLabel) => `Ещё кофе или перекус рядом с: ${locationLabel}`,
   drink: (locationLabel) => `Ещё вариант, где выпить, рядом с: ${locationLabel}`,
   relax: (locationLabel) => `Ещё место для отдыха рядом с: ${locationLabel}`,
-  see: (locationLabel) => `Ещё городская точка рядом с: ${locationLabel}`,
-  activity: (locationLabel) => `Ещё досуг рядом с: ${locationLabel}`
+  see: (locationLabel) => `Ещё вариант посмотреть что-то красивое рядом с: ${locationLabel}`,
+  activity: (locationLabel) => `Ещё активность рядом с: ${locationLabel}`
 };
 
 const RATE_LIMITED_MESSAGE = "Слишком быстро 🙂 Дай мне секунду обработать прошлый запрос.";
@@ -145,7 +142,7 @@ export function registerBotHandlers(
     }
     await ctx.reply(
       [
-        "Привет! Я Random Weekend. Помогу выбрать, куда пойти рядом: поесть, выпить, посмотреть что-то красивое или собрать прогулочный маршрут.",
+        "Всем привет! С вами телеграм-бот Random Weekend и его создатель Андрей Смирнов. Помогу придумать за вас, куда пойти в Москве: выбрать место рядом или собрать прогулочный маршрут на несколько часов.",
         "",
         LOCATION_INPUT_HELP
       ].join("\n"),
@@ -368,8 +365,8 @@ export function registerBotHandlers(
     }
     await ctx.reply(
       [
-        "Если ты в Telegram Desktop, эта кнопка может не открыть отправку геолокации.",
-        "",
+        "Если вы в Telegram Desktop, кнопка геолокации может не открыть отправку локации.",
+        "Тогда просто напишите адрес текстом: улицу и дом, метро или понятное место в Москве.",
         LOCATION_INPUT_HELP
       ].join("\n"),
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
@@ -746,7 +743,7 @@ async function askForLocation(
 ): Promise<void> {
   await ctx.reply(
     [
-      "Сначала нужно понять, откуда искать рядом.",
+      "Сначала нужно понять, откуда стартуем.",
       "",
       LOCATION_INPUT_HELP
     ].join("\n"),
@@ -972,10 +969,6 @@ async function sendNearbySuggestion(
 ): Promise<void> {
   const chatId = ctx.chat?.id;
   const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
-  analytics.track("random_selected", ctx, {
-    hasLocation: Boolean(lastLocation),
-    radiusMeters: options.radiusMeters
-  });
   const excludePlaceIds = options.excludeRecentPlaces ? lastLocation?.recentPlaceIds ?? [] : [];
   const result = findNearbySuggestion(repo, {
     lat: options.lat,
