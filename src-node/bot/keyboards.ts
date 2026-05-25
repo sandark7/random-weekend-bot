@@ -4,9 +4,9 @@ export const LOCATION_BUTTON_TEXT = "📍 Поделиться локацией"
 export const MORE_NEARBY_BUTTON_TEXT = "🔁 Ещё вариант";
 export const RANDOM_BUTTON_TEXT = "🎲 Выбери сам";
 export const ROUTE_BUTTON_TEXT = "🧭 Собрать маршрут";
-export const ROUTE_FROM_RESULT_BUTTON_TEXT = "🧭 Маршрут отсюда";
 export const REBUILD_ROUTE_BUTTON_TEXT = "🔁 Пересобрать";
 export const REPLACE_ROUTE_STEP_BUTTON_TEXT = "🔄 Заменить пункт";
+export const FEEDBACK_BUTTON_TEXT = "👎 Не подходит";
 export const REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT = "🔁 Пересобрать без этого места";
 export const KEEP_ROUTE_BUTTON_TEXT = "↩️ Оставить как было";
 export const BACK_BUTTON_TEXT = "↩️ Назад";
@@ -34,6 +34,17 @@ export const ROUTE_DURATION_BUTTONS = [
 
 export type RouteDurationButtonText = typeof ROUTE_DURATION_BUTTONS[number];
 
+export const FEEDBACK_REASON_BUTTONS = [
+  "Далеко",
+  "Не то",
+  "Закрыто",
+  "Описание врёт",
+  "Маршрут странный",
+  "Другое"
+] as const;
+
+export type FeedbackReasonButtonText = typeof FEEDBACK_REASON_BUTTONS[number];
+
 export type MainKeyboardOptions = {
   hasResolvedLocation?: boolean;
   resultKind?: "place" | "route" | null;
@@ -49,10 +60,12 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
   if (options.resultKind === "place") {
     return keyboard
       .text(MORE_NEARBY_BUTTON_TEXT)
-      .text(ROUTE_FROM_RESULT_BUTTON_TEXT)
+      .text(FEEDBACK_BUTTON_TEXT)
       .row()
       .text(CHANGE_SCENARIO_BUTTON_TEXT)
       .text(RANDOM_BUTTON_TEXT)
+      .row()
+      .text(ROUTE_BUTTON_TEXT)
       .resized();
   }
 
@@ -61,7 +74,7 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
       .text(REBUILD_ROUTE_BUTTON_TEXT)
       .text(REPLACE_ROUTE_STEP_BUTTON_TEXT)
       .row()
-      .text(RANDOM_BUTTON_TEXT)
+      .text(FEEDBACK_BUTTON_TEXT)
       .text(ROUTE_BUTTON_TEXT)
       .resized();
   }
@@ -110,6 +123,23 @@ export function routeReplacementFallbackKeyboard(): Keyboard {
     .text(REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT)
     .row()
     .text(KEEP_ROUTE_BUTTON_TEXT)
+    .resized()
+    .oneTime();
+}
+
+export function feedbackReasonKeyboard(): Keyboard {
+  const keyboard = new Keyboard();
+
+  FEEDBACK_REASON_BUTTONS.forEach((label, index) => {
+    keyboard.text(label);
+    if (index % 2 === 1 && index < FEEDBACK_REASON_BUTTONS.length - 1) {
+      keyboard.row();
+    }
+  });
+
+  return keyboard
+    .row()
+    .text(BACK_BUTTON_TEXT)
     .resized()
     .oneTime();
 }

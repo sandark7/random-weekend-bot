@@ -31,8 +31,11 @@ import {
   CONFIRM_LOCATION_BUTTON_TEXT,
   DESIRE_BUTTONS,
   BACK_BUTTON_TEXT,
+  FEEDBACK_BUTTON_TEXT,
+  FEEDBACK_REASON_BUTTONS,
   KEEP_ROUTE_BUTTON_TEXT,
   type DesireButtonText,
+  type FeedbackReasonButtonText,
   LOCATION_BUTTON_TEXT,
   MORE_NEARBY_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
@@ -40,9 +43,9 @@ import {
   REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT,
   REPLACE_ROUTE_STEP_BUTTON_TEXT,
   ROUTE_BUTTON_TEXT,
-  ROUTE_FROM_RESULT_BUTTON_TEXT,
   ROUTE_DURATION_BUTTONS,
   type RouteDurationButtonText,
+  feedbackReasonKeyboard,
   locationConfirmationKeyboard,
   mainKeyboard,
   routeDurationKeyboard,
@@ -52,10 +55,10 @@ import {
 import { parseCoordinates } from "./parseCoordinates.js";
 import {
   appendRecentPlaceId,
-  appendRecentPlaceIds,
   type LastAction,
   type LastLocation,
   type PendingConfirmation,
+  type PendingFeedbackTarget,
   type RouteStart,
   type StoredRoute
 } from "./sessionState.js";
@@ -93,16 +96,25 @@ const SCENARIO_REPEAT_INTRO: Record<PlaceScenarioKey, (locationLabel: string) =>
   activity: (locationLabel) => `Ещё досуг рядом с: ${locationLabel}`
 };
 
+const RATE_LIMITED_MESSAGE = "Слишком быстро 🙂 Дай мне секунду обработать прошлый запрос.";
+const FEEDBACK_REASONS = new Set<string>(FEEDBACK_REASON_BUTTONS);
+
 export function registerBotHandlers(
   bot: Bot,
   { config, repo, locationResolver, logger }: RegisterBotHandlersOptions
 ): void {
   const pendingConfirmations = new Map<number, PendingConfirmation>();
   const lastLocations = new Map<number, LastLocation>();
+  const lastUpdateByChat = new Map<number, number>();
 
   bot.use(async (ctx, next) => {
     const startedAt = Date.now();
     try {
+      if (isRateLimited(ctx, lastUpdateByChat, config.CHAT_COOLDOWN_MS, startedAt)) {
+        await ctx.reply(RATE_LIMITED_MESSAGE);
+        return;
+      }
+
       await next();
     } finally {
       logger.info(
@@ -173,7 +185,10 @@ export function registerBotHandlers(
       return;
     }
 
-    await repeatLastAction(ctx, repo, lastLocations, lastLocation);
+    await repeatLastAction(ctx, repo, lastLocations, lastLocation, {
+      preserveCurrentRouteOnFailure: true,
+      rebuildCurrentRouteOnly: true
+    });
   });
 
   bot.hears(CHANGE_SCENARIO_BUTTON_TEXT, async (ctx) => {
@@ -192,6 +207,7 @@ export function registerBotHandlers(
       lastRoute: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
+      pendingFeedbackTarget: null,
       lastResultKind: null,
       updatedAt: Date.now()
     });
@@ -267,7 +283,7 @@ export function registerBotHandlers(
     });
   });
 
-  bot.hears(ROUTE_FROM_RESULT_BUTTON_TEXT, async (ctx) => {
+  bot.hears(FEEDBACK_BUTTON_TEXT, async (ctx) => {
     const chatId = ctx.chat?.id;
     const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
 
@@ -276,10 +292,9 @@ export function registerBotHandlers(
       return;
     }
 
-    const routeStart = lastLocation.lastSuggestedPlace;
-
-    if (!routeStart) {
-      await ctx.reply("Сначала выбери место, от которого можно собрать маршрут.", {
+    const target = feedbackTargetFromLastLocation(lastLocation);
+    if (!target) {
+      await ctx.reply("Сначала выбери место или собери маршрут, а потом можно отметить, что не подошло.", {
         reply_markup: mainKeyboardFor(ctx, lastLocations)
       });
       return;
@@ -287,13 +302,15 @@ export function registerBotHandlers(
 
     lastLocations.set(chatId, {
       ...lastLocation,
-      pendingRouteStart: routeStart,
+      pendingFeedbackTarget: target,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
       updatedAt: Date.now()
     });
 
-    await askRouteDuration(ctx, routeStart.label);
+    await ctx.reply("Что не так?", {
+      reply_markup: feedbackReasonKeyboard()
+    });
   });
 
   bot.hears([...ROUTE_DURATION_BUTTONS], async (ctx) => {
@@ -314,8 +331,7 @@ export function registerBotHandlers(
       repo,
       lastLocations,
       lastLocation,
-      durationHours,
-      lastLocation.pendingRouteStart ?? undefined
+      durationHours
     );
   });
 
@@ -355,6 +371,48 @@ export function registerBotHandlers(
     }
 
     if (ctx.message.text.startsWith("/")) {
+      return;
+    }
+
+    if (ctx.message.text.length > config.MAX_TEXT_INPUT_LENGTH) {
+      await ctx.reply(
+        `Сообщение слишком длинное. Напиши адрес или ориентир короче, до ${config.MAX_TEXT_INPUT_LENGTH} символов.`,
+        { reply_markup: mainKeyboardFor(ctx, lastLocations) }
+      );
+      return;
+    }
+
+    if (ctx.message.text === BACK_BUTTON_TEXT && lastLocation?.pendingFeedbackTarget) {
+      lastLocations.set(chatId, {
+        ...lastLocation,
+        pendingFeedbackTarget: null,
+        updatedAt: Date.now()
+      });
+
+      await ctx.reply("Ок, оставляем как есть.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    if (FEEDBACK_REASONS.has(ctx.message.text) && lastLocation?.pendingFeedbackTarget) {
+      logFeedback(ctx, logger, lastLocation.pendingFeedbackTarget, ctx.message.text as FeedbackReasonButtonText);
+      lastLocations.set(chatId, {
+        ...lastLocation,
+        pendingFeedbackTarget: null,
+        updatedAt: Date.now()
+      });
+
+      await ctx.reply("Спасибо! Запомнил, что вариант не подошёл.", {
+        reply_markup: mainKeyboardFor(ctx, lastLocations)
+      });
+      return;
+    }
+
+    if (lastLocation?.pendingFeedbackTarget) {
+      await ctx.reply("Выбери причину кнопкой или нажми «Назад».", {
+        reply_markup: feedbackReasonKeyboard()
+      });
       return;
     }
 
@@ -405,8 +463,7 @@ export function registerBotHandlers(
         routeLocation,
         lastLocation.lastRoute.durationHours,
         lastLocation.lastRoute.routeStart,
-        [lastLocation.pendingRouteReplacementExcludePlaceId],
-        true
+        [lastLocation.pendingRouteReplacementExcludePlaceId]
       );
       return;
     }
@@ -589,6 +646,7 @@ async function rememberLocationAndAskScenario(
       lastRoute: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
+      pendingFeedbackTarget: null,
       lastResultKind: null,
       updatedAt: Date.now()
     });
@@ -648,7 +706,11 @@ async function repeatLastAction(
   ctx: Context,
   repo: PlaceRepository,
   lastLocations: Map<number, LastLocation>,
-  lastLocation: LastLocation
+  lastLocation: LastLocation,
+  options: {
+    preserveCurrentRouteOnFailure?: boolean;
+    rebuildCurrentRouteOnly?: boolean;
+  } = {}
 ): Promise<void> {
   const action = lastLocation.lastAction;
   if (!action) {
@@ -672,7 +734,18 @@ async function repeatLastAction(
   }
 
   if (action.type === "route") {
-    await sendRoute(ctx, repo, lastLocations, lastLocation, action.durationHours, action.routeStart);
+    await sendRoute(
+      ctx,
+      repo,
+      lastLocations,
+      lastLocation,
+      action.durationHours,
+      action.routeStart,
+      options.rebuildCurrentRouteOnly
+        ? lastLocation.lastRoute?.steps.map((step) => step.placeId) ?? []
+        : [],
+      Boolean(options.preserveCurrentRouteOnFailure)
+    );
     return;
   }
 
@@ -696,7 +769,7 @@ async function sendRoute(
   durationHours: RouteDurationHours,
   routeStart?: RouteStart,
   extraExcludePlaceIds: number[] = [],
-  ignoreRecentPlaceIds = false
+  preserveCurrentRouteOnFailure = false
 ): Promise<void> {
   const start = routeStart ?? {
     lat: lastLocation.lat,
@@ -705,19 +778,54 @@ async function sendRoute(
   };
   const startedAt = new Date();
 
-  const route = buildRoute(repo, {
+  let routeNote: string | null = null;
+  let route = buildRoute(repo, {
     start: { lat: start.lat, lon: start.lon },
     radiusMeters: lastLocation.radiusMeters,
     now: startedAt,
-    excludePlaceIds: ignoreRecentPlaceIds
-      ? extraExcludePlaceIds
-      : [...lastLocation.recentPlaceIds, ...extraExcludePlaceIds],
+    excludePlaceIds: extraExcludePlaceIds,
     durationHours
   });
 
+  if (!route && preserveCurrentRouteOnFailure && extraExcludePlaceIds.length > 0) {
+    route = buildRoute(repo, {
+      start: { lat: start.lat, lon: start.lon },
+      radiusMeters: lastLocation.radiusMeters,
+      now: startedAt,
+      excludePlaceIds: [],
+      durationHours
+    });
+    if (route) {
+      routeNote = "Не нашёл достаточно отличающийся маршрут, поэтому собрал ближайший рабочий вариант.";
+    }
+  }
+
   if (!route) {
+    if (preserveCurrentRouteOnFailure && lastLocation.lastRoute) {
+      await ctx.reply(
+        "Не смог пересобрать маршрут так, чтобы он остался последовательным. Оставил предыдущий вариант.",
+        { reply_markup: mainKeyboardFor(ctx, lastLocations) }
+      );
+      return;
+    }
+
+    if (ctx.chat?.id) {
+      lastLocations.set(ctx.chat.id, {
+        ...lastLocation,
+        lastAction: null,
+        lastSuggestedPlace: null,
+        pendingRouteStart: null,
+        lastRoute: null,
+        pendingRouteReplacement: false,
+        pendingRouteReplacementExcludePlaceId: null,
+        pendingFeedbackTarget: null,
+        lastResultKind: null,
+        updatedAt: Date.now()
+      });
+    }
+
     await ctx.reply(
-      "Не смог собрать последовательный маршрут рядом: не хватает открытых точек, которые подходят по времени, расстоянию и открытости. Попробуй другую длительность или стартовую точку.",
+      "Не получилось собрать хороший маршрут на выбранную длительность. Похоже, рядом пока мало подходящих открытых мест.\n\nМожно попробовать другую длительность или выбрать конкретную категорию.",
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
     );
     return;
@@ -726,22 +834,24 @@ async function sendRoute(
   if (ctx.chat?.id) {
     lastLocations.set(ctx.chat.id, {
       ...lastLocation,
-      recentPlaceIds: appendRecentPlaceIds(
-        lastLocation.recentPlaceIds,
-        route.map((step) => step.suggestion.placeId)
-      ),
+      recentPlaceIds: lastLocation.recentPlaceIds,
       lastAction: { type: "route", durationHours, routeStart },
       lastSuggestedPlace: null,
       pendingRouteStart: null,
       lastRoute: toStoredRoute(route, durationHours, start, startedAt, routeStart),
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
+      pendingFeedbackTarget: null,
       lastResultKind: "route",
       updatedAt: Date.now()
     });
   }
 
-  await ctx.reply(formatRoute(durationHours, start.label, route), {
+  const routeMessage = routeNote
+    ? `${escapeHtml(routeNote)}\n\n${formatRoute(durationHours, start.label, route)}`
+    : formatRoute(durationHours, start.label, route);
+
+  await ctx.reply(routeMessage, {
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
     reply_markup: mainKeyboardFor(ctx, lastLocations)
@@ -805,6 +915,7 @@ async function sendNearbySuggestion(
       lastRoute: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
+      pendingFeedbackTarget: null,
       lastResultKind: "place",
       updatedAt: Date.now()
     });
@@ -854,7 +965,7 @@ async function replaceRouteStepAndReply(
     route,
     stepIndex,
     radiusMeters: lastLocation.radiusMeters,
-    excludePlaceIds: lastLocation.recentPlaceIds,
+    excludePlaceIds: [],
     durationHours: storedRoute.durationHours
   });
 
@@ -893,6 +1004,7 @@ async function replaceRouteStepAndReply(
     lastRoute: updatedRoute,
     pendingRouteReplacement: false,
     pendingRouteReplacementExcludePlaceId: null,
+    pendingFeedbackTarget: null,
     lastResultKind: "route",
     updatedAt: Date.now()
   });
@@ -979,4 +1091,68 @@ function mainKeyboardFor(ctx: Context, lastLocations: Map<number, LastLocation>)
     hasResolvedLocation: Boolean(lastLocation),
     resultKind: lastLocation?.lastResultKind ?? null
   });
+}
+
+function feedbackTargetFromLastLocation(lastLocation: LastLocation): PendingFeedbackTarget | null {
+  if (lastLocation.lastResultKind === "place" && lastLocation.lastSuggestedPlace?.placeId) {
+    const scenario = lastLocation.lastAction?.type === "scenario"
+      ? lastLocation.lastAction.scenario
+      : undefined;
+    return {
+      type: "place",
+      placeId: lastLocation.lastSuggestedPlace.placeId,
+      scenario
+    };
+  }
+
+  if (lastLocation.lastResultKind === "route" && lastLocation.lastRoute) {
+    return {
+      type: "route",
+      durationHours: lastLocation.lastRoute.durationHours,
+      placeIds: lastLocation.lastRoute.steps.map((step) => step.placeId)
+    };
+  }
+
+  return null;
+}
+
+function logFeedback(
+  ctx: Context,
+  logger: AppLogger,
+  target: PendingFeedbackTarget,
+  reason: FeedbackReasonButtonText
+): void {
+  logger.info(
+    {
+      event: "feedback_sent",
+      userId: ctx.from?.id,
+      chatId: ctx.chat?.id,
+      reason,
+      ...target
+    },
+    "feedback_sent"
+  );
+}
+
+function isRateLimited(
+  ctx: Context,
+  lastUpdateByChat: Map<number, number>,
+  cooldownMs: number,
+  now: number
+): boolean {
+  if (cooldownMs === 0 || !ctx.chat?.id) {
+    return false;
+  }
+
+  if (ctx.message?.text?.startsWith("/")) {
+    return false;
+  }
+
+  const previousUpdateAt = lastUpdateByChat.get(ctx.chat.id) ?? 0;
+  if (now - previousUpdateAt < cooldownMs) {
+    return true;
+  }
+
+  lastUpdateByChat.set(ctx.chat.id, now);
+  return false;
 }

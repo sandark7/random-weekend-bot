@@ -20,6 +20,8 @@ export type RouteStart = {
   lat: number;
   lon: number;
   label: string;
+  scenarioKey?: PlaceScenarioKey;
+  suggestion?: PlaceSuggestion;
 };
 
 export type LastAction =
@@ -44,6 +46,10 @@ export type StoredRoute = {
   steps: StoredRouteStep[];
 };
 
+export type PendingFeedbackTarget =
+  | { type: "place"; placeId: number; scenario?: PlaceScenarioKey }
+  | { type: "route"; durationHours: RouteDurationHours; placeIds: number[] };
+
 export type LastLocation = {
   lat: number;
   lon: number;
@@ -56,6 +62,7 @@ export type LastLocation = {
   lastRoute: StoredRoute | null;
   pendingRouteReplacement: boolean;
   pendingRouteReplacementExcludePlaceId: number | null;
+  pendingFeedbackTarget: PendingFeedbackTarget | null;
   lastResultKind: LastResultKind;
   updatedAt: number;
 };

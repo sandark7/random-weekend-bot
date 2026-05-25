@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlaceRepository } from "../src-node/db/placeRepository.js";
 import {
   buildRoute,
+  buildRouteFromFixedFirstStep,
   recalculateRouteSteps,
   replaceRouteStep
 } from "../src-node/recommendation/routeBuilder.js";
@@ -337,6 +338,56 @@ describe("route planner", () => {
       lat: route?.[0]?.suggestion.lat,
       lon: route?.[0]?.suggestion.lon
     });
+  });
+
+  it("continues a route from a fixed drink place instead of starting the day template over", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const firstSuggestion = makeSuggestion({ placeId: 1, slug: "bar", lat: 55.75, lon: 37.61 });
+    const blockedCategories = new Set(["coffee", "breakfast", "quick_bite", "bar", "cocktail_bar", "wine_bar", "pub"]);
+    let nextPlaceId = 10;
+    const repo = {
+      findNearby: (options: { lat: number; lon: number; categorySlug?: string }) => {
+        if (options.categorySlug && blockedCategories.has(options.categorySlug)) {
+          return [];
+        }
+
+        return [
+          makeSuggestion({
+            placeId: nextPlaceId++,
+            slug: options.categorySlug ?? "restaurant",
+            lat: options.lat + 0.001,
+            lon: options.lon + 0.001
+          })
+        ];
+      }
+    } as unknown as PlaceRepository;
+
+    const ordinaryRoute = buildRoute(repo, {
+      start: { lat: firstSuggestion.lat, lon: firstSuggestion.lon },
+      radiusMeters: 1500,
+      now: new Date("2026-05-24T16:00:00Z"),
+      excludePlaceIds: [firstSuggestion.placeId],
+      durationHours: 3
+    });
+    const routeFromDrink = buildRouteFromFixedFirstStep(repo, {
+      firstStep: {
+        scenarioKey: "drink",
+        suggestion: firstSuggestion
+      },
+      radiusMeters: 1500,
+      now: new Date("2026-05-24T16:00:00Z"),
+      excludePlaceIds: [firstSuggestion.placeId],
+      durationHours: 3
+    });
+
+    expect(ordinaryRoute).toBeNull();
+    expect(routeFromDrink).not.toBeNull();
+    expect(routeFromDrink?.[0]).toMatchObject({
+      scenario: { key: "drink" },
+      suggestion: { placeId: firstSuggestion.placeId },
+      walkMinutes: 0
+    });
+    expect(routeFromDrink?.map((step) => step.suggestion.placeId)).not.toContain(firstSuggestion.placeId + 1);
   });
 
   it("replaces only the selected route step and recalculates following transitions", () => {

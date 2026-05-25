@@ -34,6 +34,8 @@ const envSchema = z.object({
   GEOCODER_BOUNDED: z.coerce.boolean().default(true),
   GEOCODER_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   GEOCODER_MIN_INTERVAL_MS: z.coerce.number().int().nonnegative().default(1100),
+  MAX_TEXT_INPUT_LENGTH: z.coerce.number().int().positive().default(300),
+  CHAT_COOLDOWN_MS: z.coerce.number().int().nonnegative().default(700),
   LOG_LEVEL: z.string().default("info")
 });
 

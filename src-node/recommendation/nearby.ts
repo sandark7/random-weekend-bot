@@ -124,5 +124,12 @@ export function findNearbyByCategories(
     }
   }
 
-  return [...byPlaceId.values()].sort((left, right) => left.distanceMeters - right.distanceMeters);
+  const suggestions = [...byPlaceId.values()];
+  const categorySlugs = new Set(options.categorySlugs);
+  const primaryMatches = suggestions.filter((suggestion) => (
+    suggestion.categories.some((category) => category.isPrimary && categorySlugs.has(category.slug))
+  ));
+  const sortableSuggestions = primaryMatches.length > 0 ? primaryMatches : suggestions;
+
+  return sortableSuggestions.sort((left, right) => left.distanceMeters - right.distanceMeters);
 }

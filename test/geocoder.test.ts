@@ -75,6 +75,8 @@ function makeConfig(): AppConfig {
     GEOCODER_BOUNDED: true,
     GEOCODER_TIMEOUT_MS: 5000,
     GEOCODER_MIN_INTERVAL_MS: 0,
+    MAX_TEXT_INPUT_LENGTH: 300,
+    CHAT_COOLDOWN_MS: 0,
     LOG_LEVEL: "silent"
   };
 }

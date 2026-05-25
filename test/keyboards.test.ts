@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   DESIRE_BUTTONS,
+  FEEDBACK_BUTTON_TEXT,
+  FEEDBACK_REASON_BUTTONS,
   LOCATION_BUTTON_TEXT,
   MORE_NEARBY_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
   REBUILD_ROUTE_BUTTON_TEXT,
   REPLACE_ROUTE_STEP_BUTTON_TEXT,
   ROUTE_BUTTON_TEXT,
-  ROUTE_FROM_RESULT_BUTTON_TEXT,
   ROUTE_DURATION_BUTTONS,
+  feedbackReasonKeyboard,
   locationConfirmationKeyboard,
   mainKeyboard,
   routeDurationKeyboard
@@ -50,8 +52,9 @@ describe("bot keyboards", () => {
   it("shows place result actions by two after a suggestion", () => {
     expect(mainKeyboard({ hasResolvedLocation: true, resultKind: "place" })).toMatchObject({
       keyboard: [
-        [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: ROUTE_FROM_RESULT_BUTTON_TEXT }],
-        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }]
+        [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: FEEDBACK_BUTTON_TEXT }],
+        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }],
+        [{ text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });
@@ -60,7 +63,26 @@ describe("bot keyboards", () => {
     expect(mainKeyboard({ hasResolvedLocation: true, resultKind: "route" })).toMatchObject({
       keyboard: [
         [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
-        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
+  });
+
+  it("shows compact feedback reasons", () => {
+    expect(FEEDBACK_REASON_BUTTONS).toEqual([
+      "Далеко",
+      "Не то",
+      "Закрыто",
+      "Описание врёт",
+      "Маршрут странный",
+      "Другое"
+    ]);
+    expect(feedbackReasonKeyboard()).toMatchObject({
+      keyboard: [
+        [{ text: "Далеко" }, { text: "Не то" }],
+        [{ text: "Закрыто" }, { text: "Описание врёт" }],
+        [{ text: "Маршрут странный" }, { text: "Другое" }],
+        [{ text: "↩️ Назад" }]
       ]
     });
   });

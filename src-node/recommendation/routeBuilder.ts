@@ -144,6 +144,125 @@ const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
   ]
 };
 
+const ROUTE_CONTINUATION_TEMPLATES: Record<PlaceScenarioKey, Partial<Record<RouteDurationHours, readonly RouteTemplate[]>>> = {
+  drink: {
+    2: [
+      [["see"]],
+      [["eat"]],
+      [["relax"]]
+    ],
+    3: [
+      [["see"], ["eat"]],
+      [["eat"], ["drink"]],
+      [["see"], ["relax"]]
+    ],
+    5: [
+      [["see"], ["eat"], ["drink"]],
+      [["eat"], ["see"], ["relax"]],
+      [["see"], ["activity"], ["eat"]]
+    ],
+    8: [
+      [["see"], ["activity"], ["eat"], ["see"], ["drink"]],
+      [["eat"], ["see"], ["activity"], ["eat"], ["drink"]],
+      [["see"], ["eat"], ["relax"], ["see"], ["drink"]]
+    ]
+  },
+  eat: {
+    2: [
+      [["see"]],
+      [["drink"]],
+      [["relax"]]
+    ],
+    3: [
+      [["see"], ["drink"]],
+      [["activity"], ["drink"]],
+      [["see"], ["relax"]]
+    ],
+    5: [
+      [["see"], ["activity"], ["drink"]],
+      [["activity"], ["see"], ["drink"]],
+      [["see"], ["relax"], ["drink"]]
+    ],
+    8: [
+      [["see"], ["activity"], ["see"], ["drink"], ["relax"]],
+      [["activity"], ["see"], ["eat"], ["see"], ["drink"]]
+    ]
+  },
+  coffee_snack: {
+    2: [
+      [["see"]],
+      [["activity"]]
+    ],
+    3: [
+      [["see"], ["eat"]],
+      [["activity"], ["eat"]]
+    ],
+    5: [
+      [["see"], ["activity"], ["eat"], ["drink"]],
+      [["activity"], ["see"], ["eat"], ["drink"]]
+    ],
+    8: [
+      [["see"], ["activity"], ["eat"], ["see"], ["drink"], ["relax"]]
+    ]
+  },
+  see: {
+    2: [
+      [["coffee_snack"]],
+      [["eat"]],
+      [["activity"]]
+    ],
+    3: [
+      [["coffee_snack"], ["eat"]],
+      [["activity"], ["eat"]],
+      [["eat"], ["drink"]]
+    ],
+    5: [
+      [["coffee_snack"], ["activity"], ["eat"], ["drink"]],
+      [["activity"], ["see"], ["eat"], ["drink"]]
+    ],
+    8: [
+      [["coffee_snack"], ["activity"], ["eat"], ["see"], ["drink"], ["relax"]]
+    ]
+  },
+  activity: {
+    2: [
+      [["eat"]],
+      [["drink"]],
+      [["see"]]
+    ],
+    3: [
+      [["eat"], ["drink"]],
+      [["see"], ["eat"]],
+      [["relax"], ["drink"]]
+    ],
+    5: [
+      [["see"], ["eat"], ["drink"]],
+      [["eat"], ["see"], ["relax"]]
+    ],
+    8: [
+      [["see"], ["eat"], ["activity"], ["see"], ["drink"], ["relax"]]
+    ]
+  },
+  relax: {
+    2: [
+      [["drink"]],
+      [["eat"]],
+      [["see"]]
+    ],
+    3: [
+      [["eat"], ["drink"]],
+      [["see"], ["drink"]]
+    ],
+    5: [
+      [["see"], ["eat"], ["drink"]],
+      [["eat"], ["see"], ["drink"]]
+    ],
+    8: [
+      [["see"], ["eat"], ["activity"], ["see"], ["drink"]]
+    ]
+  }
+};
+
 export function buildRoute(
   repo: PlaceRepository,
   options: {
@@ -171,6 +290,69 @@ export function buildRoute(
     });
 
     if (routeIsAcceptable(route, targetMinutes, options.durationHours)) {
+      attempts.push(route);
+    }
+  }
+
+  return attempts.sort((left, right) => routeScore(right, targetMinutes) - routeScore(left, targetMinutes))[0] ?? null;
+}
+
+export function buildRouteFromFixedFirstStep(
+  repo: PlaceRepository,
+  options: {
+    firstStep: {
+      scenarioKey: PlaceScenarioKey;
+      suggestion: PlaceSuggestion;
+    };
+    radiusMeters: number;
+    now: Date;
+    excludePlaceIds: number[];
+    durationHours: RouteDurationHours;
+  }
+): RouteStep[] | null {
+  const targetMinutes = options.durationHours * 60;
+  const scenario = PLACE_SCENARIOS[options.firstStep.scenarioKey];
+  const transitionRadiusMeters = Math.min(options.radiusMeters, MAX_ROUTE_TRANSITION_METERS);
+  const firstSuggestion = {
+    ...options.firstStep.suggestion,
+    distanceMeters: 0
+  };
+  const firstStep: RouteStep = {
+    scenario,
+    suggestion: firstSuggestion,
+    origin: { lat: firstSuggestion.lat, lon: firstSuggestion.lon },
+    arrival: options.now,
+    walkMinutes: 0,
+    visitDurationMinutes: placeVisitDurationMinutes(firstSuggestion)
+  };
+
+  if (isOpenForDuration(firstSuggestion.openingHoursJson, options.now, firstStep.visitDurationMinutes) !== true) {
+    return null;
+  }
+
+  const templates = ROUTE_CONTINUATION_TEMPLATES[scenario.key][options.durationHours] ?? ROUTE_TEMPLATES[options.durationHours];
+  const attempts: RouteStep[][] = [];
+  const firstStepDurationMinutes = firstStep.walkMinutes + firstStep.visitDurationMinutes;
+
+  for (let attempt = 0; attempt < 36; attempt += 1) {
+    const continuation = buildRouteFromTemplate(repo, {
+      template: templates[attempt % templates.length] ?? [],
+      start: { lat: firstSuggestion.lat, lon: firstSuggestion.lon },
+      now: options.now,
+      targetMinutes,
+      radiusMeters: transitionRadiusMeters,
+      excludePlaceIds: [...options.excludePlaceIds, firstSuggestion.placeId],
+      initialState: {
+        elapsedMinutes: firstStepDurationMinutes,
+        lastPrimaryCategory: primaryCategorySlug(firstSuggestion),
+        lastScenarioKey: scenario.key,
+        usedFineDining: hasCategory(firstSuggestion, "fine_dining") ? 1 : 0,
+        usedBathhouse: hasCategory(firstSuggestion, "bathhouse") ? 1 : 0
+      }
+    });
+    const route = [firstStep, ...continuation];
+
+    if (routeIsAcceptable(route, targetMinutes, options.durationHours, { fixedFirstStep: true })) {
       attempts.push(route);
     }
   }
@@ -354,17 +536,24 @@ function buildRouteFromTemplate(
     targetMinutes: number;
     radiusMeters: number;
     excludePlaceIds: number[];
+    initialState?: {
+      elapsedMinutes: number;
+      lastPrimaryCategory: string | null;
+      lastScenarioKey: PlaceScenarioKey | null;
+      usedFineDining: number;
+      usedBathhouse: number;
+    };
   }
 ): RouteStep[] {
   const steps: RouteStep[] = [];
   const usedPlaceIds = new Set(options.excludePlaceIds);
 
   let origin = options.start;
-  let elapsedMinutes = 0;
-  let lastPrimaryCategory: string | null = null;
-  let lastScenarioKey: PlaceScenarioKey | null = null;
-  let usedFineDining = 0;
-  let usedBathhouse = 0;
+  let elapsedMinutes = options.initialState?.elapsedMinutes ?? 0;
+  let lastPrimaryCategory: string | null = options.initialState?.lastPrimaryCategory ?? null;
+  let lastScenarioKey: PlaceScenarioKey | null = options.initialState?.lastScenarioKey ?? null;
+  let usedFineDining = options.initialState?.usedFineDining ?? 0;
+  let usedBathhouse = options.initialState?.usedBathhouse ?? 0;
 
   for (const slot of options.template) {
     const arrival = addMinutes(options.now, elapsedMinutes);
@@ -518,9 +707,15 @@ function replacementCandidateRank(
 function routeIsAcceptable(
   route: RouteStep[],
   targetMinutes: number,
-  durationHours: RouteDurationHours
+  durationHours: RouteDurationHours,
+  options: {
+    fixedFirstStep?: boolean;
+  } = {}
 ): boolean {
-  if (route.length < minRouteSteps(durationHours)) {
+  const minSteps = options.fixedFirstStep
+    ? Math.max(minRouteSteps(durationHours) - 1, 1)
+    : minRouteSteps(durationHours);
+  if (route.length < minSteps) {
     return false;
   }
 

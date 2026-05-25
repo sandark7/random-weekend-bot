@@ -11,7 +11,8 @@
     "db:import": "node scripts/run-module.mjs dist-node/src-node/import/importCsv.js src-node/import/importCsv.ts",
     "validate:csv": "tsx scripts/validateCsv.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "npm run typecheck && npm test && npm run build && npm run validate:csv"
   },
   "dependencies": {
     "@fastify/formbody": "^8.0.2",

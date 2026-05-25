@@ -5,14 +5,20 @@ import type { LocationResolver } from "../src-node/geo/locationResolver.js";
 import type { AppLogger } from "../src-node/logger.js";
 import { createCityDateBot } from "../src-node/bot/createBot.js";
 import {
+  BACK_BUTTON_TEXT,
+  CHANGE_LOCATION_BUTTON_TEXT,
+  CONFIRM_LOCATION_BUTTON_TEXT,
   DESIRE_BUTTONS,
+  FEEDBACK_BUTTON_TEXT,
+  KEEP_ROUTE_BUTTON_TEXT,
   LOCATION_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
   REBUILD_ROUTE_BUTTON_TEXT,
+  REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT,
   REPLACE_ROUTE_STEP_BUTTON_TEXT,
-  ROUTE_BUTTON_TEXT,
-  ROUTE_FROM_RESULT_BUTTON_TEXT
+  ROUTE_BUTTON_TEXT
 } from "../src-node/bot/keyboards.js";
+import type { ResolvedLocation } from "../src-node/geo/locationResolver.js";
 import type { OpeningHoursJson, PlaceSuggestion } from "../src-node/shared/types.js";
 
 type ApiCall = {
@@ -25,6 +31,15 @@ type NearbyCall = {
   lon: number;
   categorySlug?: string;
   radiusMeters?: number;
+};
+
+type HarnessOptions = {
+  resolverResult?: ResolvedLocation;
+  resolverThrows?: boolean;
+  noRoute?: boolean;
+  noReplacement?: boolean;
+  chatCooldownMs?: number;
+  maxTextInputLength?: number;
 };
 
 const chatId = 101;
@@ -77,6 +92,107 @@ describe("bot conversation flow", () => {
     });
   });
 
+  it("accepts a shared Telegram location as an alternative starting point", async () => {
+    const { bot, replies, locationResolver } = createHarness();
+
+    await sendText(bot, "/start");
+    await sendLocation(bot, 55.75, 37.61);
+
+    expect(locationResolver.resolve).not.toHaveBeenCalled();
+    expect(replies.at(-1)?.text).toContain("Ищу рядом с вашей геолокацией");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
+  });
+
+  it("asks for confirmation when a text location is uncertain and stores it after yes", async () => {
+    const { bot, replies } = createHarness({
+      resolverResult: {
+        status: "needs_confirmation",
+        confidence: "medium",
+        kind: "exact_address",
+        query: "Тверская 7",
+        label: "Москва, Тверская улица, 7",
+        lat: 55.758,
+        lon: 37.612
+      }
+    });
+
+    await sendText(bot, "Тверская 7");
+
+    expect(replies.at(-1)?.text).toBe("Похоже, вы имели в виду: Москва, Тверская улица, 7?");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: CONFIRM_LOCATION_BUTTON_TEXT }],
+        [{ text: CHANGE_LOCATION_BUTTON_TEXT }],
+        [{ text: LOCATION_BUTTON_TEXT, request_location: true }]
+      ]
+    });
+
+    await sendText(bot, CONFIRM_LOCATION_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Ищу рядом с: Москва, Тверская улица, 7");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
+  });
+
+  it("does not show scenarios when a text location cannot be resolved", async () => {
+    const { bot, replies } = createHarness({
+      resolverResult: {
+        status: "failed",
+        confidence: "low",
+        kind: "unknown",
+        reason: "not_found"
+      }
+    });
+
+    await sendText(bot, "мусорный адрес без смысла");
+
+    expect(replies.at(-1)?.text).toContain("Не смог точно понять адрес");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [[{ text: LOCATION_BUTTON_TEXT, request_location: true }]]
+    });
+  });
+
+  it("rejects very long text before geocoding", async () => {
+    const { bot, replies, locationResolver } = createHarness({ maxTextInputLength: 20 });
+
+    await sendText(bot, "очень длинный пользовательский текст вместо адреса");
+
+    expect(locationResolver.resolve).not.toHaveBeenCalled();
+    expect(replies.at(-1)?.text).toContain("Сообщение слишком длинное");
+  });
+
+  it("rate limits rapid repeated chat messages", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies, locationResolver } = createHarness({ chatCooldownMs: 700 });
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, "Покровка 17");
+
+    expect(locationResolver.resolve).toHaveBeenCalledTimes(1);
+    expect(replies.at(-1)?.text).toContain("Слишком быстро");
+
+    vi.setSystemTime(new Date("2026-05-24T09:00:01Z"));
+    await sendText(bot, "Покровка 17");
+
+    expect(locationResolver.resolve).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
   it("shows the scenario menu after resolving a text location", async () => {
     const { bot, replies } = createHarness();
 
@@ -105,44 +221,426 @@ describe("bot conversation flow", () => {
     expect(reply?.text).toContain("ГЭС-2");
     expect(reply?.replyMarkup).toMatchObject({
       keyboard: [
-        [{ text: "🔁 Ещё вариант" }, { text: ROUTE_FROM_RESULT_BUTTON_TEXT }],
-        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }]
+        [{ text: "🔁 Ещё вариант" }, { text: FEEDBACK_BUTTON_TEXT }],
+        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }],
+        [{ text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });
 
-  it("builds route-from-result from the suggested place, not from the original location", async () => {
+  it("serves choose-it-for-me nearby after location without hookah categories", async () => {
+    const { bot, replies, nearbyCalls } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, RANDOM_BUTTON_TEXT);
+
+    expect(nearbyCalls.map((call) => call.categorySlug)).not.toContain("hookah");
+    expect(nearbyCalls.map((call) => call.categorySlug)).not.toContain("bathhouse");
+    expect(replies.at(-1)?.text).toContain("Выбираю рядом с: Москва, Дубининская улица, 59");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: "🔁 Ещё вариант" }, { text: FEEDBACK_BUTTON_TEXT }],
+        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }],
+        [{ text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
+  });
+
+	  it("collects feedback for the last suggested place", async () => {
+	    const { bot, logger, replies } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, "🍸 Выпить");
+    await sendText(bot, FEEDBACK_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toBe("Что не так?");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: "Далеко" }, { text: "Не то" }],
+        [{ text: "Закрыто" }, { text: "Описание врёт" }],
+        [{ text: "Маршрут странный" }, { text: "Другое" }],
+        [{ text: BACK_BUTTON_TEXT }]
+      ]
+    });
+
+    await sendText(bot, "Не то");
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "feedback_sent",
+        type: "place",
+        placeId: 201,
+        reason: "Не то",
+        scenario: "drink"
+      }),
+      "feedback_sent"
+    );
+	    expect(replies.at(-1)?.text).toContain("Спасибо");
+	  });
+
+	  it("collects feedback for the last route", async () => {
+	    vi.useFakeTimers();
+	    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+	    const { bot, logger, replies } = createHarness();
+
+	    await sendText(bot, "Дубининская 59");
+	    await sendText(bot, ROUTE_BUTTON_TEXT);
+	    await sendText(bot, "3 часа");
+	    await sendText(bot, FEEDBACK_BUTTON_TEXT);
+
+	    expect(replies.at(-1)?.text).toBe("Что не так?");
+
+	    await sendText(bot, "Маршрут странный");
+
+	    expect(logger.info).toHaveBeenCalledWith(
+	      expect.objectContaining({
+	        event: "feedback_sent",
+	        type: "route",
+	        durationHours: 3,
+	        reason: "Маршрут странный",
+	        placeIds: expect.any(Array)
+	      }),
+	      "feedback_sent"
+	    );
+	    expect(replies.at(-1)?.text).toContain("Спасибо");
+
+	    vi.useRealTimers();
+	  });
+
+  it("prefers primary drink places over restaurants that only have pub as secondary", async () => {
+    const { bot, replies } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, "🍸 Выпить");
+
+    expect(replies.at(-1)?.text).toContain("Настоящий бар");
+    expect(replies.at(-1)?.text).not.toContain("Ресторан с пабом");
+  });
+
+  it("repeats the last place scenario without changing the origin or repeating the same place", async () => {
+    const { bot, replies, nearbyCalls } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, "🍸 Выпить");
+    const firstReply = replies.at(-1)?.text;
+    await sendText(bot, "🔁 Ещё вариант");
+
+    expect(replies.at(-1)?.text).toContain("Ещё вариант, где выпить, рядом с: Москва, Дубининская улица, 59");
+    expect(replies.at(-1)?.text).not.toBe(firstReply);
+    expect(nearbyCalls.at(-1)).toMatchObject({
+      lat: 55.729,
+      lon: 37.636
+    });
+  });
+
+  it("returns to scenario menu after changing category", async () => {
+    const { bot, replies } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, "🏛 Город");
+    await sendText(bot, "🔄 Сменить категорию");
+
+    expect(replies.at(-1)?.text).toContain("Что хочется сделать?");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
+  });
+
+	it("builds a route from the original location and keeps route-result buttons", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies, nearbyCalls } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    expect(replies.at(-1)?.text).toBe("На сколько часов собрать маршрут?");
+
+    const callCountBeforeRoute = nearbyCalls.length;
+    await sendText(bot, "5 часов");
+    const routeCalls = nearbyCalls.slice(callCountBeforeRoute);
+
+    expect(routeCalls[0]).toMatchObject({
+      lat: 55.729,
+      lon: 37.636
+    });
+    expect(replies.at(-1)?.text).toContain("Собрал маршрут");
+    expect(replies.at(-1)?.text).toContain("Ищу рядом с: Москва, Дубининская улица, 59");
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
+
+	it("builds a route from the original location after a place card", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
     const { bot, replies, nearbyCalls } = createHarness();
 
     await sendText(bot, "Дубининская 59");
     await sendText(bot, "🏛 Город");
-    await sendText(bot, ROUTE_FROM_RESULT_BUTTON_TEXT);
+    await sendText(bot, ROUTE_BUTTON_TEXT);
 
-    expect(replies.at(-1)?.text).toBe("На сколько часов собрать маршрут от места «ГЭС-2»?");
+    expect(replies.at(-1)?.text).toBe("На сколько часов собрать маршрут?");
 
     const callCountBeforeRoute = nearbyCalls.length;
     await sendText(bot, "2 часа");
     const routeCalls = nearbyCalls.slice(callCountBeforeRoute);
 
     expect(routeCalls[0]).toMatchObject({
-      lat: 55.741,
-      lon: 37.611
+      lat: 55.729,
+      lon: 37.636
     });
-    expect(replies.at(-1)?.text).toContain("Ищу рядом с: ГЭС-2");
+    expect(replies.at(-1)?.text).toContain("Ищу рядом с: Москва, Дубининская улица, 59");
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
+
+  it("keeps route context after a failed route build", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies } = createHarness({ noRoute: true });
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "5 часов");
+
+    expect(replies.at(-1)?.text).toContain("Не получилось собрать хороший маршрут");
     expect(replies.at(-1)?.replyMarkup).toMatchObject({
       keyboard: [
-        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
         [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
 
     vi.useRealTimers();
   });
+
+  it("clears stale route context after a new route build fails", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies, setNoRoute } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    expect(replies.at(-1)?.text).toContain("Собрал маршрут");
+
+    setNoRoute(true);
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "2 часа");
+
+    expect(replies.at(-1)?.text).toContain("Не получилось собрать хороший маршрут");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
+
+    await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Сначала нужно собрать маршрут");
+
+    vi.useRealTimers();
+  });
+
+	it("rebuilds a route from the same route start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    const firstRoute = replies.at(-1)?.text;
+
+    await sendText(bot, REBUILD_ROUTE_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Ищу рядом с: Москва, Дубининская улица, 59");
+    expect(replies.at(-1)?.text).not.toBe(firstRoute);
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
+
+	it("keeps the previous route if rebuild cannot find a better route", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies, setNoRoute } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    expect(replies.at(-1)?.text).toContain("Собрал маршрут");
+
+    setNoRoute(true);
+    await sendText(bot, REBUILD_ROUTE_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Не смог пересобрать маршрут");
+    expect(replies.at(-1)?.text).toContain("Оставил предыдущий вариант");
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
+
+	it("replaces a selected route step and keeps route result context", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    const originalRouteText = replies.at(-1)?.text ?? "";
+
+    await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
+    expect(replies.at(-1)?.text).toBe("Какой пункт заменить?");
+    await sendText(bot, "3. restaurant рядом");
+
+    expect(replies.at(-1)?.text).toContain("Заменил пункт 3.");
+    expect(replies.at(-1)?.text).toContain("Было:");
+    expect(replies.at(-1)?.text).toContain("Стало:");
+    expect(replies.at(-1)?.text).toContain("Маршрут теперь примерно на");
+    expect(replies.at(-1)?.text).not.toBe(originalRouteText);
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
+
+  it("offers fallback actions when a selected route step cannot be replaced", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies } = createHarness({ noReplacement: true });
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
+    await sendText(bot, "3. restaurant рядом");
+
+    expect(replies.at(-1)?.text).toContain("Не смог заменить только этот пункт");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT }],
+        [{ text: KEEP_ROUTE_BUTTON_TEXT }]
+      ]
+    });
+
+    vi.useRealTimers();
+  });
+
+	it("keeps the existing route when replacement fallback is declined", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies } = createHarness({ noReplacement: true });
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
+    await sendText(bot, "3. restaurant рядом");
+    await sendText(bot, KEEP_ROUTE_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Ок, оставляем маршрут как есть");
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
+
+	it("rebuilds without the failed replacement place when fallback is accepted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies } = createHarness({ noReplacement: true });
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
+    await sendText(bot, "3. restaurant рядом");
+    await sendText(bot, REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Собрал маршрут");
+    expect(replies.at(-1)?.text).not.toContain("restaurant рядом");
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
+
+	it("does not geocode arbitrary text while waiting for a route replacement choice", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies, locationResolver } = createHarness();
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
+    const resolveCallsBefore = locationResolver.resolve.mock.calls.length;
+
+    await sendText(bot, "Тверская 7");
+
+    expect(locationResolver.resolve).toHaveBeenCalledTimes(resolveCallsBefore);
+    expect(replies.at(-1)?.text).toContain("Выбери пункт маршрута кнопкой или нажми «Назад»");
+
+    await sendText(bot, BACK_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Ок, оставляем маршрут как есть");
+	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+	      keyboard: [
+	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
+	        [{ text: FEEDBACK_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+	      ]
+	    });
+
+    vi.useRealTimers();
+  });
 });
 
-function createHarness() {
+function createHarness(options: HarnessOptions = {}) {
   const replies: Array<{
     text: string;
     replyMarkup?: unknown;
@@ -150,11 +648,47 @@ function createHarness() {
   const apiCalls: ApiCall[] = [];
   const nearbyCalls: NearbyCall[] = [];
   let nextGeneratedPlaceId = 1000;
+  let replacementMode = false;
+  let noRoute = Boolean(options.noRoute);
 
   const repo = {
-    findNearby: vi.fn((options: NearbyCall) => {
-      nearbyCalls.push(options);
-      const categorySlug = options.categorySlug ?? "restaurant";
+    findNearby: vi.fn((query: NearbyCall) => {
+      nearbyCalls.push(query);
+      if (query.radiusMeters !== undefined && query.radiusMeters < 1500) {
+        return createRouteSuggestions(query, nextGeneratedPlaceId, {
+          noRoute,
+          noReplacement: Boolean(options.noReplacement && replacementMode)
+        });
+      }
+
+      const categorySlug = query.categorySlug ?? "restaurant";
+      if (categorySlug === "bar") {
+        return [
+          makeSuggestion({
+            placeId: 201,
+            name: "Настоящий бар",
+            slug: "bar",
+            categoryName: "Бар",
+            lat: query.lat + 0.001,
+            lon: query.lon + 0.001,
+            distanceMeters: 120
+          })
+        ];
+      }
+      if (categorySlug === "pub") {
+        return [
+          makeSuggestion({
+            placeId: 202,
+            name: "Ресторан с пабом",
+            slug: "restaurant",
+            categoryName: "Ресторан",
+            lat: query.lat + 0.0002,
+            lon: query.lon + 0.0002,
+            distanceMeters: 30,
+            secondaryCategories: [{ slug: "pub", name: "Паб" }]
+          })
+        ];
+      }
       if (categorySlug === "culture") {
         return [
           makeSuggestion({
@@ -177,16 +711,16 @@ function createHarness() {
           placeId: nextGeneratedPlaceId++,
           name: `${categorySlug} рядом`,
           slug: categorySlug,
-          lat: options.lat + 0.001,
-          lon: options.lon + 0.001,
+          lat: query.lat + 0.001,
+          lon: query.lon + 0.001,
           distanceMeters: 120
         }),
         makeSuggestion({
           placeId: nextGeneratedPlaceId++,
           name: `${categorySlug} ещё`,
           slug: categorySlug,
-          lat: options.lat + 0.0015,
-          lon: options.lon + 0.0015,
+          lat: query.lat + 0.0015,
+          lon: query.lon + 0.0015,
           distanceMeters: 180
         })
       ];
@@ -198,23 +732,32 @@ function createHarness() {
   };
 
   const locationResolver = {
-    resolve: vi.fn(async (query: string) => ({
-      status: "ok" as const,
-      confidence: "good" as const,
-      kind: "exact_address" as const,
-      query,
-      label: "Москва, Дубининская улица, 59",
-      lat: 55.729,
-      lon: 37.636
-    }))
-  } as unknown as LocationResolver;
+    resolve: vi.fn(async (query: string) => {
+      if (options.resolverThrows) {
+        throw new Error("resolver failed");
+      }
 
-  const bot = createCityDateBot({
-    config: makeConfig(),
-    repo,
-    locationResolver,
-    logger: makeLogger()
-  });
+      return options.resolverResult ?? {
+        status: "ok" as const,
+        confidence: "good" as const,
+        kind: "exact_address" as const,
+        query,
+        label: "Москва, Дубининская улица, 59",
+        lat: 55.729,
+        lon: 37.636
+      };
+    })
+  } as unknown as LocationResolver & {
+    resolve: ReturnType<typeof vi.fn>;
+  };
+
+	  const logger = makeLogger();
+	  const bot = createCityDateBot({
+	    config: makeConfig(options),
+	    repo,
+	    locationResolver,
+	    logger
+	  });
   bot.botInfo = {
     id: 777,
     is_bot: true,
@@ -229,8 +772,15 @@ function createHarness() {
   bot.api.config.use((async (_prev, method, payload) => {
     apiCalls.push({ method, payload: payload as Record<string, unknown> });
     if (method === "sendMessage") {
+      const text = String((payload as { text: string }).text);
+      if (text === "Какой пункт заменить?") {
+        replacementMode = true;
+      }
+      if (text.includes("Не смог заменить только этот пункт")) {
+        replacementMode = false;
+      }
       replies.push({
-        text: String((payload as { text: string }).text),
+        text,
         replyMarkup: (payload as { reply_markup?: unknown }).reply_markup
       });
       return {
@@ -250,11 +800,56 @@ function createHarness() {
   return {
     apiCalls,
     bot,
-    locationResolver,
-    nearbyCalls,
+	    locationResolver,
+	    logger,
+	    nearbyCalls,
     replies,
-    repo
+    repo,
+    setNoRoute: (value: boolean) => {
+      noRoute = value;
+    }
   };
+}
+
+function createRouteSuggestions(
+  options: NearbyCall,
+  nextPlaceId: number,
+  flags: {
+    noRoute: boolean;
+    noReplacement: boolean;
+  }
+): PlaceSuggestion[] {
+  if (flags.noRoute) {
+    return [];
+  }
+
+  const categorySlug = options.categorySlug ?? "restaurant";
+  if (flags.noReplacement && categorySlug === "restaurant") {
+    return [];
+  }
+
+  return [
+    makeSuggestion({
+      placeId: nextPlaceId + routePlaceOffset(categorySlug),
+      name: `${categorySlug} рядом`,
+      slug: categorySlug,
+      lat: options.lat + 0.001,
+      lon: options.lon + 0.001,
+      distanceMeters: 120
+    }),
+    makeSuggestion({
+      placeId: nextPlaceId + routePlaceOffset(categorySlug) + 100,
+      name: `${categorySlug} замена`,
+      slug: categorySlug,
+      lat: options.lat + 0.0015,
+      lon: options.lon + 0.0015,
+      distanceMeters: 160
+    })
+  ];
+}
+
+function routePlaceOffset(slug: string): number {
+  return [...slug].reduce((sum, char) => sum + char.charCodeAt(0), 0);
 }
 
 async function sendText(bot: ReturnType<typeof createCityDateBot>, text: string): Promise<void> {
@@ -274,6 +869,22 @@ async function sendText(bot: ReturnType<typeof createCityDateBot>, text: string)
   } as Parameters<typeof bot.handleUpdate>[0]);
 }
 
+async function sendLocation(bot: ReturnType<typeof createCityDateBot>, latitude: number, longitude: number): Promise<void> {
+  await bot.handleUpdate({
+    update_id: nextUpdateId(),
+    message: {
+      message_id: nextUpdateId(),
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: chatId, type: "private", first_name: "Tester" },
+      from: { id: userId, is_bot: false, first_name: "Tester" },
+      location: {
+        latitude,
+        longitude
+      }
+    }
+  } as Parameters<typeof bot.handleUpdate>[0]);
+}
+
 let updateId = 1;
 function nextUpdateId(): number {
   updateId += 1;
@@ -288,6 +899,7 @@ function makeSuggestion(options: {
   lat: number;
   lon: number;
   distanceMeters: number;
+  secondaryCategories?: Array<{ slug: string; name: string }>;
 }): PlaceSuggestion {
   return {
     placeId: options.placeId,
@@ -297,7 +909,11 @@ function makeSuggestion(options: {
         slug: options.slug,
         name: options.categoryName ?? options.slug,
         isPrimary: true
-      }
+      },
+      ...(options.secondaryCategories ?? []).map((category) => ({
+        ...category,
+        isPrimary: false
+      }))
     ],
     description: "Живое место для прогулочного сценария.",
     address: "Москва",
@@ -309,7 +925,7 @@ function makeSuggestion(options: {
   };
 }
 
-function makeConfig(): AppConfig {
+function makeConfig(options: Pick<HarnessOptions, "chatCooldownMs" | "maxTextInputLength"> = {}): AppConfig {
   return {
     NODE_ENV: "test",
     BOT_TOKEN: "123:test",
@@ -328,6 +944,8 @@ function makeConfig(): AppConfig {
     GEOCODER_BOUNDED: true,
     GEOCODER_TIMEOUT_MS: 5000,
     GEOCODER_MIN_INTERVAL_MS: 0,
+    MAX_TEXT_INPUT_LENGTH: options.maxTextInputLength ?? 300,
+    CHAT_COOLDOWN_MS: options.chatCooldownMs ?? 0,
     LOG_LEVEL: "silent"
   };
 }
