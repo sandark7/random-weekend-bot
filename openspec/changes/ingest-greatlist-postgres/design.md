@@ -39,7 +39,7 @@ The default provider is Nominatim-compatible:
 - single-threaded requests with a configurable interval.
 
 For regular or large imports, run a local Nominatim/Photon/Pelias instance and
-point `CITYDATEBOT_NOMINATIM_URL` to it. The public Nominatim service should be
+point `RANDOM_WEEKEND_BOT_NOMINATIM_URL` to it. The public Nominatim service should be
 used only deliberately and respectfully.
 
 ## Quality Control

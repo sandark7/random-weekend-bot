@@ -1,4 +1,4 @@
-# City Date Bot
+# Random Weekend Bot
 
 Telegram-бот для случайных прогулок, кофе, ужинов и культурных остановок в центре Москвы.
 
@@ -77,7 +77,7 @@ npm run dev
 Для публичного `nominatim.openstreetmap.org` важно соблюдать usage policy: не делать autocomplete, ставить осмысленный `GEOCODER_USER_AGENT` и не превышать лимиты. Для продакшена лучше указать User-Agent с контактом:
 
 ```bash
-GEOCODER_USER_AGENT=citydatebot/0.2 your-email@example.com
+GEOCODER_USER_AGENT=RandomWeekendBot/0.2 your-email@example.com
 ```
 
 ## Docker
@@ -88,7 +88,7 @@ GEOCODER_USER_AGENT=citydatebot/0.2 your-email@example.com
 docker compose up -d --build bot
 ```
 
-При старте контейнер применит миграции и импортирует `data/import/*.csv` в SQLite. SQLite сохранится в volume `citydatebot-sqlite-data`.
+При старте контейнер применит миграции и импортирует `data/import/*.csv` в SQLite. SQLite сохранится в volume `random-weekend-bot-sqlite-data`.
 
 Проверить запуск:
 

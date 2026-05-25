@@ -36,10 +36,10 @@ ENV GEOCODER_MIN_INTERVAL_MS=1100
 
 WORKDIR /app
 
-RUN addgroup --system citydatebot \
-  && adduser --system --ingroup citydatebot citydatebot \
+RUN addgroup --system random-weekend-bot \
+  && adduser --system --ingroup random-weekend-bot random-weekend-bot \
   && mkdir -p /app/data /app/import \
-  && chown -R citydatebot:citydatebot /app
+  && chown -R random-weekend-bot:random-weekend-bot /app
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist-node ./dist-node
@@ -49,7 +49,7 @@ COPY scripts/run-module.mjs ./scripts/run-module.mjs
 COPY migrations ./migrations
 COPY data/import ./import
 
-USER citydatebot
+USER random-weekend-bot
 
 EXPOSE 3000
 

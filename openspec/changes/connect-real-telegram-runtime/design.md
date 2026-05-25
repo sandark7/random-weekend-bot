@@ -7,8 +7,8 @@ starts polling. This keeps configuration checks and tests lightweight.
 
 Commands:
 
-- `python3 -m citydatebot --check`: validate local runtime config.
-- `python3 -m citydatebot`: start Telegram polling.
+- `python3 -m random_weekend_bot --check`: validate local runtime config.
+- `python3 -m random_weekend_bot`: start Telegram polling.
 
 ## Configuration
 
@@ -17,7 +17,7 @@ Shell variables override `.env` values.
 
 New setting:
 
-- `CITYDATEBOT_DROP_PENDING_UPDATES`: defaults to `true`.
+- `RANDOM_WEEKEND_BOT_DROP_PENDING_UPDATES`: defaults to `true`.
 
 ## Startup Sequence
 
@@ -33,4 +33,3 @@ start polling
 ## Secret Handling
 
 The CLI must never print `BOT_TOKEN`. It may report whether a token is present.
-

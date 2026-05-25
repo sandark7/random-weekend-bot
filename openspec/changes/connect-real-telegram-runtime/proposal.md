@@ -26,10 +26,9 @@ Out of scope:
 
 ## Success Criteria
 
-- `python3 -m citydatebot --check` validates data paths and token presence
+- `python3 -m random_weekend_bot --check` validates data paths and token presence
   without requiring Telegram network access.
 - `scripts/run_bot.sh` starts the bot after dependencies are installed and
   `BOT_TOKEN` is set.
 - Missing token errors are clear and do not print secrets.
 - Existing recommendation tests remain green.
-

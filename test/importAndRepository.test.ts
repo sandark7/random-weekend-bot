@@ -21,7 +21,7 @@ afterEach(() => {
 
 describe("CSV import and repository", () => {
   it("imports seed CSV and finds a nearby open place", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "random-weekend-bot-"));
     tempDirs.push(tempDir);
 
     const config = makeTestConfig(join(tempDir, "bot.sqlite"));
@@ -48,7 +48,7 @@ describe("CSV import and repository", () => {
   });
 
   it("keeps Cafe Pushkin coordinates and mixed opening hours", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "random-weekend-bot-"));
     tempDirs.push(tempDir);
 
     const config = makeTestConfig(join(tempDir, "bot.sqlite"));
@@ -115,7 +115,7 @@ describe("CSV import and repository", () => {
   });
 
   it("allows source-only place rows before enrichment", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "random-weekend-bot-"));
     tempDirs.push(tempDir);
 
     const config = makeTestConfig(join(tempDir, "bot.sqlite"));
@@ -125,7 +125,7 @@ describe("CSV import and repository", () => {
   });
 
   it("deletes places and replaces category links that are absent from the latest CSV import", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "random-weekend-bot-"));
     tempDirs.push(tempDir);
 
     const importDir = join(tempDir, "import");
@@ -156,7 +156,7 @@ describe("CSV import and repository", () => {
   });
 
   it("deletes categories that are absent from the latest CSV import", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "random-weekend-bot-"));
     tempDirs.push(tempDir);
 
     const importDir = join(tempDir, "import");
@@ -191,7 +191,7 @@ describe("CSV import and repository", () => {
   });
 
   it("rejects duplicate place/category pairs before writing to SQLite", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "citydatebot-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "random-weekend-bot-"));
     tempDirs.push(tempDir);
 
     const importDir = join(tempDir, "import");
@@ -217,7 +217,7 @@ function makeTestConfig(databasePath: string, importDir = resolve("data/import")
     IMPORT_DIR: importDir,
     SEARCH_RADIUS_METERS: 1500,
     GEOCODER_URL: "https://nominatim.openstreetmap.org/search",
-    GEOCODER_USER_AGENT: "citydatebot-test/0.2",
+    GEOCODER_USER_AGENT: "random-weekend-bot-test/0.2",
     GEOCODER_ACCEPT_LANGUAGE: "ru",
     GEOCODER_COUNTRY_CODES: "ru",
     GEOCODER_CITY_BIAS: "Москва",

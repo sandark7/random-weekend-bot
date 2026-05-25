@@ -51,7 +51,7 @@ describe("geocoder", () => {
     expect(url.searchParams.get("q")).toBe("Тверская 7, Москва");
     expect(url.searchParams.get("countrycodes")).toBe("ru");
     expect(init.headers).toMatchObject({
-      "User-Agent": "citydatebot-test/0.2"
+      "User-Agent": "random-weekend-bot-test/0.2"
     });
   });
 });
@@ -67,7 +67,7 @@ function makeConfig(): AppConfig {
     IMPORT_DIR: "data/import",
     SEARCH_RADIUS_METERS: 1500,
     GEOCODER_URL: "https://nominatim.openstreetmap.org/search",
-    GEOCODER_USER_AGENT: "citydatebot-test/0.2",
+    GEOCODER_USER_AGENT: "random-weekend-bot-test/0.2",
     GEOCODER_ACCEPT_LANGUAGE: "ru",
     GEOCODER_COUNTRY_CODES: "ru",
     GEOCODER_CITY_BIAS: "Москва",

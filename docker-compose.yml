@@ -21,9 +21,9 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - citydatebot-sqlite-data:/app/data
+      - random-weekend-bot-sqlite-data:/app/data
       - ./data/import:/app/import:ro
     restart: unless-stopped
 
 volumes:
-  citydatebot-sqlite-data:
+  random-weekend-bot-sqlite-data:

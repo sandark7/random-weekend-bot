@@ -19,15 +19,15 @@ changing the recommendation service contract.
 Telegram user
     |
     v
-aiogram adapter (citydatebot.bot)
+aiogram adapter (random_weekend_bot.bot)
     |
     v
-Application service (citydatebot.app)
+Application service (random_weekend_bot.app)
     |
-    +--> Local geocoder (citydatebot.geocoding)
-    +--> Activity repository (citydatebot.repository)
-    +--> Recommender (citydatebot.recommender)
-    +--> Formatter (citydatebot.formatting)
+    +--> Local geocoder (random_weekend_bot.geocoding)
+    +--> Activity repository (random_weekend_bot.repository)
+    +--> Recommender (random_weekend_bot.recommender)
+    +--> Formatter (random_weekend_bot.formatting)
 ```
 
 ## Key Decisions
@@ -75,9 +75,9 @@ startup.
 ## Runtime Configuration
 
 - `BOT_TOKEN`: Telegram bot token.
-- `CITYDATEBOT_DATA_PATH`: optional path to activities JSON.
-- `CITYDATEBOT_ANCHORS_PATH`: optional path to anchors JSON.
-- `CITYDATEBOT_RADIUS_METERS`: optional walking radius; defaults to `1500`.
+- `RANDOM_WEEKEND_BOT_DATA_PATH`: optional path to activities JSON.
+- `RANDOM_WEEKEND_BOT_ANCHORS_PATH`: optional path to anchors JSON.
+- `RANDOM_WEEKEND_BOT_RADIUS_METERS`: optional walking radius; defaults to `1500`.
 
 ## Future Extension Points
 
@@ -85,4 +85,3 @@ startup.
 - Add a database repository implementation.
 - Add user history to avoid repeating suggestions.
 - Add category filters and mood prompts.
-

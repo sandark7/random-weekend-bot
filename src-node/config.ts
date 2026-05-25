@@ -26,7 +26,7 @@ const envSchema = z.object({
   IMPORT_DIR: z.string().default("data/import"),
   SEARCH_RADIUS_METERS: z.coerce.number().int().positive().default(1500),
   GEOCODER_URL: z.string().url().default("https://nominatim.openstreetmap.org/search"),
-  GEOCODER_USER_AGENT: z.string().min(8).default("citydatebot/0.2 (set GEOCODER_USER_AGENT)"),
+  GEOCODER_USER_AGENT: z.string().min(8).default("RandomWeekendBot/0.2 (set GEOCODER_USER_AGENT)"),
   GEOCODER_ACCEPT_LANGUAGE: z.string().default("ru"),
   GEOCODER_COUNTRY_CODES: z.string().default("ru"),
   GEOCODER_CITY_BIAS: z.string().default("Москва"),
