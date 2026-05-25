@@ -77,6 +77,9 @@ function makeConfig(): AppConfig {
     GEOCODER_MIN_INTERVAL_MS: 0,
     MAX_TEXT_INPUT_LENGTH: 300,
     CHAT_COOLDOWN_MS: 0,
+    ANALYTICS_ENABLED: false,
+    ANALYTICS_SALT: undefined,
+    APP_VERSION: "test",
     LOG_LEVEL: "silent"
   };
 }

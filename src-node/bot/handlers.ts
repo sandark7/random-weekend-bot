@@ -259,11 +259,6 @@ export function registerBotHandlers(
       return;
     }
 
-    analytics.track("route_step_replace_started", ctx, {
-      durationHours: lastLocation.lastRoute.durationHours,
-      routePlaceIds: lastLocation.lastRoute.steps.map((step) => step.placeId),
-      routeSteps: lastLocation.lastRoute.steps.length
-    });
 
     lastLocations.set(chatId, {
       ...lastLocation,
@@ -286,6 +281,12 @@ export function registerBotHandlers(
       });
       return;
     }
+
+    analytics.track("route_step_replace_started", ctx, {
+      durationHours: lastLocation.lastRoute.durationHours,
+      routePlaceIds: lastLocation.lastRoute.steps.map((step) => step.placeId),
+      routeSteps: lastLocation.lastRoute.steps.length
+    });
 
     lastLocations.set(chatId, {
       ...lastLocation,
@@ -352,6 +353,7 @@ export function registerBotHandlers(
       ctx,
       repo,
       lastLocations,
+      analytics,
       lastLocation,
       durationHours,
       undefined,
@@ -495,14 +497,20 @@ export function registerBotHandlers(
         updatedAt: Date.now()
       };
       lastLocations.set(chatId, routeLocation);
+      analytics.track("route_step_rebuild_without_place", ctx, {
+        durationHours: lastLocation.lastRoute.durationHours,
+        excludedPlaceId: lastLocation.pendingRouteReplacementExcludePlaceId
+      });
       await sendRoute(
         ctx,
         repo,
         lastLocations,
+        analytics,
         routeLocation,
         lastLocation.lastRoute.durationHours,
         lastLocation.lastRoute.routeStart,
-        [lastLocation.pendingRouteReplacementExcludePlaceId]
+        [lastLocation.pendingRouteReplacementExcludePlaceId],
+        "rebuild_without_place"
       );
       return;
     }
@@ -524,7 +532,7 @@ export function registerBotHandlers(
     const replaceStepMatch = /^(\d+)\.\s+/.exec(ctx.message.text);
     if (replaceStepMatch && lastLocation?.pendingRouteReplacement && lastLocation.lastRoute) {
       const stepIndex = Number(replaceStepMatch[1]) - 1;
-      await replaceRouteStepAndReply(ctx, repo, lastLocations, lastLocation, stepIndex);
+      await replaceRouteStepAndReply(ctx, repo, lastLocations, analytics, lastLocation, stepIndex);
       return;
     }
 
@@ -768,6 +776,7 @@ async function repeatLastAction(
   ctx: Context,
   repo: PlaceRepository,
   lastLocations: Map<number, LastLocation>,
+  analytics: Analytics,
   lastLocation: LastLocation,
   options: {
     preserveCurrentRouteOnFailure?: boolean;
@@ -782,7 +791,7 @@ async function repeatLastAction(
 
   if (action.type === "scenario") {
     const scenario = PLACE_SCENARIOS[action.scenario];
-    await sendNearbySuggestion(ctx, repo, lastLocations, {
+    await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
       lat: lastLocation.lat,
       lon: lastLocation.lon,
       radiusMeters: lastLocation.radiusMeters,
@@ -800,18 +809,20 @@ async function repeatLastAction(
       ctx,
       repo,
       lastLocations,
+      analytics,
       lastLocation,
       action.durationHours,
       action.routeStart,
       options.rebuildCurrentRouteOnly
         ? lastLocation.lastRoute?.steps.map((step) => step.placeId) ?? []
         : [],
+      "rebuild",
       Boolean(options.preserveCurrentRouteOnFailure)
     );
     return;
   }
 
-  await sendNearbySuggestion(ctx, repo, lastLocations, {
+  await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
     lat: lastLocation.lat,
     lon: lastLocation.lon,
     radiusMeters: lastLocation.radiusMeters,
@@ -827,10 +838,12 @@ async function sendRoute(
   ctx: Context,
   repo: PlaceRepository,
   lastLocations: Map<number, LastLocation>,
+  analytics: Analytics,
   lastLocation: LastLocation,
   durationHours: RouteDurationHours,
   routeStart?: RouteStart,
   extraExcludePlaceIds: number[] = [],
+  routeMode: RouteMode = "new",
   preserveCurrentRouteOnFailure = false
 ): Promise<void> {
   const start = routeStart ?? {
@@ -863,6 +876,15 @@ async function sendRoute(
   }
 
   if (!route) {
+    analytics.track(routeMode === "new" ? "route_failed" : "route_rebuild_failed", ctx, {
+      durationHours,
+      radiusMeters: lastLocation.radiusMeters,
+      failureReason: preserveCurrentRouteOnFailure
+        ? "could_not_rebuild_sequence"
+        : "not_enough_open_places",
+      routeMode
+    });
+
     if (preserveCurrentRouteOnFailure && lastLocation.lastRoute) {
       await ctx.reply(
         "Не смог пересобрать маршрут так, чтобы он остался последовательным. Оставил предыдущий вариант.",
@@ -892,6 +914,18 @@ async function sendRoute(
     );
     return;
   }
+
+  analytics.track(routeMode === "new" ? "route_built" : "route_rebuilt", ctx, {
+    durationHours,
+    routeSteps: route.length,
+    routeDurationMinutes: routeDuration(route),
+    routePlaceIds: route.map((step) => step.suggestion.placeId),
+    primaryCategories: route.map((step) => primaryCategorySlug(step.suggestion)),
+    totalWalkMinutes: route.reduce((sum, step) => sum + step.walkMinutes, 0),
+    radiusMeters: lastLocation.radiusMeters,
+    hadRouteNote: Boolean(routeNote),
+    routeMode
+  });
 
   if (ctx.chat?.id) {
     lastLocations.set(ctx.chat.id, {
@@ -924,6 +958,7 @@ async function sendNearbySuggestion(
   ctx: Context,
   repo: PlaceRepository,
   lastLocations: Map<number, LastLocation>,
+  analytics: Analytics,
   options: {
     lat: number;
     lon: number;
@@ -937,6 +972,10 @@ async function sendNearbySuggestion(
 ): Promise<void> {
   const chatId = ctx.chat?.id;
   const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
+  analytics.track("random_selected", ctx, {
+    hasLocation: Boolean(lastLocation),
+    radiusMeters: options.radiusMeters
+  });
   const excludePlaceIds = options.excludeRecentPlaces ? lastLocation?.recentPlaceIds ?? [] : [];
   const result = findNearbySuggestion(repo, {
     lat: options.lat,
@@ -947,6 +986,15 @@ async function sendNearbySuggestion(
   });
 
   if (!result) {
+    const fallbackRadiusMeters = Math.max(options.radiusMeters * 2, 2500);
+    analytics.track("place_not_found", ctx, {
+      scenario: getScenarioFromAction(options.action),
+      categorySlugs: options.categorySlugs ?? null,
+      radiusMeters: options.radiusMeters,
+      fallbackRadiusMeters,
+      failureReason: "no_open_places"
+    });
+
     if (chatId && lastLocation) {
       lastLocations.set(chatId, {
         ...lastLocation,
@@ -962,13 +1010,25 @@ async function sendNearbySuggestion(
       });
     }
 
-    const fallbackRadiusMeters = Math.max(options.radiusMeters * 2, 2500);
     await ctx.reply(
       `Рядом в радиусе ${fallbackRadiusMeters} м пока нет открытых мест под этот сценарий. Можно сменить категорию или попробовать «Выбери сам».`,
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
     );
     return;
   }
+
+  analytics.track("place_suggested", ctx, {
+    scenario: getScenarioFromAction(options.action),
+    categorySlugs: options.categorySlugs ?? null,
+    radiusMeters: options.radiusMeters,
+    resultRadiusMeters: result.radiusMeters,
+    hadRadiusFallback: result.radiusMeters > options.radiusMeters,
+    resetRecentPlaces: result.resetRecentPlaces,
+    placeId: result.suggestion.placeId,
+    primaryCategory: primaryCategorySlug(result.suggestion),
+    distanceMeters: result.suggestion.distanceMeters,
+    walkingMinutes: walkingMinutes(result.suggestion.distanceMeters)
+  });
 
   if (chatId) {
     const recentPlaceIds =
@@ -1017,6 +1077,7 @@ async function replaceRouteStepAndReply(
   ctx: Context,
   repo: PlaceRepository,
   lastLocations: Map<number, LastLocation>,
+  analytics: Analytics,
   lastLocation: LastLocation,
   stepIndex: number
 ): Promise<void> {
@@ -1047,6 +1108,13 @@ async function replaceRouteStepAndReply(
   });
 
   if (!result) {
+    analytics.track("route_step_replace_failed", ctx, {
+      durationHours: storedRoute.durationHours,
+      stepIndex,
+      oldPlaceId: oldStoredStep?.placeId,
+      failureReason: "no_valid_replacement"
+    });
+
     lastLocations.set(chatId, {
       ...lastLocation,
       pendingRouteReplacement: false,
@@ -1060,6 +1128,15 @@ async function replaceRouteStepAndReply(
     );
     return;
   }
+
+  analytics.track("route_step_replaced", ctx, {
+    durationHours: storedRoute.durationHours,
+    stepIndex,
+    oldPlaceId: result.oldStep.suggestion.placeId,
+    newPlaceId: result.newStep.suggestion.placeId,
+    routePlaceIds: result.route.map((step) => step.suggestion.placeId),
+    routeDurationMinutes: routeDuration(result.route)
+  });
 
   const updatedRoute = toStoredRoute(
     result.route,
@@ -1141,12 +1218,17 @@ async function sendRandomSuggestion(
   ctx: Context,
   repo: PlaceRepository,
   lastLocations: Map<number, LastLocation>,
+  analytics: Analytics,
   radiusMeters: number
 ): Promise<void> {
   const chatId = ctx.chat?.id;
   const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
+  analytics.track("random_selected", ctx, {
+    hasLocation: Boolean(lastLocation),
+    radiusMeters
+  });
   if (lastLocation) {
-    await sendNearbySuggestion(ctx, repo, lastLocations, {
+    await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
       lat: lastLocation.lat,
       lon: lastLocation.lon,
       radiusMeters,
@@ -1191,6 +1273,48 @@ function feedbackTargetFromLastLocation(lastLocation: LastLocation): PendingFeed
   }
 
   return null;
+}
+
+function getScenarioFromAction(action: LastAction | undefined): PlaceScenarioKey | "random" | null {
+  if (!action) {
+    return null;
+  }
+
+  if (action.type === "scenario") {
+    return action.scenario;
+  }
+
+  if (action.type === "random") {
+    return "random";
+  }
+
+  return null;
+}
+
+function feedbackStartedPayload(target: PendingFeedbackTarget): Record<string, unknown> {
+  if (target.type === "place") {
+    return {
+      targetType: "place",
+      placeId: target.placeId,
+      scenario: target.scenario
+    };
+  }
+
+  return {
+    targetType: "route",
+    durationHours: target.durationHours,
+    routePlaceIds: target.placeIds
+  };
+}
+
+function feedbackSentPayload(
+  target: PendingFeedbackTarget,
+  reason: FeedbackReasonButtonText
+): Record<string, unknown> {
+  return {
+    ...feedbackStartedPayload(target),
+    reason
+  };
 }
 
 function logFeedback(

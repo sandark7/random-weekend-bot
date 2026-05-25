@@ -9,6 +9,7 @@
     "start": "node dist-node/src-node/index.js",
     "db:migrate": "node scripts/run-module.mjs dist-node/src-node/db/migrate.js src-node/db/migrate.ts",
     "db:import": "node scripts/run-module.mjs dist-node/src-node/import/importCsv.js src-node/import/importCsv.ts",
+    "analytics:summary": "tsx scripts/analytics-summary.ts",
     "validate:csv": "tsx scripts/validateCsv.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -970,6 +970,9 @@ function makeConfig(options: Pick<HarnessOptions, "chatCooldownMs" | "maxTextInp
     GEOCODER_MIN_INTERVAL_MS: 0,
     MAX_TEXT_INPUT_LENGTH: options.maxTextInputLength ?? 300,
     CHAT_COOLDOWN_MS: options.chatCooldownMs ?? 0,
+    ANALYTICS_ENABLED: false,
+    ANALYTICS_SALT: undefined,
+    APP_VERSION: "test",
     LOG_LEVEL: "silent"
   };
 }
