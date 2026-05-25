@@ -2,7 +2,7 @@ import { Keyboard } from "grammy";
 
 export const LOCATION_BUTTON_TEXT = "📍 Поделиться локацией";
 export const MORE_NEARBY_BUTTON_TEXT = "🔁 Ещё вариант";
-export const RANDOM_BUTTON_TEXT = "🎲 Выбери сам";
+export const RANDOM_BUTTON_TEXT = "🎲 Полный рандом";
 export const ROUTE_BUTTON_TEXT = "🧭 Собрать маршрут";
 export const REBUILD_ROUTE_BUTTON_TEXT = "🔁 Пересобрать";
 export const REPLACE_ROUTE_STEP_BUTTON_TEXT = "🔄 Заменить пункт";
@@ -63,8 +63,6 @@ export function mainKeyboard(options: MainKeyboardOptions = {}): Keyboard {
       .text(FEEDBACK_BUTTON_TEXT)
       .row()
       .text(CHANGE_SCENARIO_BUTTON_TEXT)
-      .text(RANDOM_BUTTON_TEXT)
-      .row()
       .text(ROUTE_BUTTON_TEXT)
       .resized();
   }

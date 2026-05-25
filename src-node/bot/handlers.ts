@@ -1004,7 +1004,7 @@ async function sendNearbySuggestion(
     }
 
     await ctx.reply(
-      `Рядом в радиусе ${fallbackRadiusMeters} м пока нет открытых мест под этот сценарий. Можно сменить категорию или попробовать «Выбери сам».`,
+      `Рядом в радиусе ${fallbackRadiusMeters} м пока нет открытых мест под этот сценарий. Можно сменить категорию или попробовать «Полный рандом».`,
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
     );
     return;
