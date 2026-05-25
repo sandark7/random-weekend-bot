@@ -354,6 +354,10 @@ export function registerBotHandlers(
       pendingConfirmations.delete(chatId);
     }
 
+    if (ctx.message.text.startsWith("/")) {
+      return;
+    }
+
     if (ctx.message.text === BACK_BUTTON_TEXT && lastLocation?.pendingRouteReplacement) {
       lastLocations.set(chatId, {
         ...lastLocation,
