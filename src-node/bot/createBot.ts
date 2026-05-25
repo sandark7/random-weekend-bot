@@ -1,4 +1,5 @@
 import { Bot } from "grammy";
+import { noopAnalytics, type Analytics } from "../analytics/analytics.js";
 import type { AppConfig } from "../config.js";
 import type { PlaceRepository } from "../db/placeRepository.js";
 import type { LocationResolver } from "../geo/locationResolver.js";
@@ -10,6 +11,7 @@ type CreateBotOptions = {
   repo: PlaceRepository;
   locationResolver: LocationResolver;
   logger: AppLogger;
+  analytics?: Analytics;
 };
 
 export function createCityDateBot(options: CreateBotOptions): Bot {
@@ -18,6 +20,9 @@ export function createCityDateBot(options: CreateBotOptions): Bot {
   }
 
   const bot = new Bot(options.config.BOT_TOKEN);
-  registerBotHandlers(bot, options);
+  registerBotHandlers(bot, {
+    ...options,
+    analytics: options.analytics ?? noopAnalytics
+  });
   return bot;
 }

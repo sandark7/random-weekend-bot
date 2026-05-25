@@ -1,4 +1,5 @@
 import { Bot, type Context } from "grammy";
+import { roundCoord, type Analytics } from "../analytics/analytics.js";
 import type { AppConfig } from "../config.js";
 import type { PlaceRepository } from "../db/placeRepository.js";
 import type { LocationResolver } from "../geo/locationResolver.js";
@@ -15,7 +16,7 @@ import {
   formatRoute,
   formatRouteDuration
 } from "../recommendation/routeFormatter.js";
-import { routeDuration } from "../recommendation/routeRules.js";
+import { primaryCategorySlug, routeDuration, walkingMinutes } from "../recommendation/routeRules.js";
 import {
   PLACE_SCENARIOS,
   ROUTE_DURATION_BY_BUTTON,
@@ -68,7 +69,10 @@ type RegisterBotHandlersOptions = {
   repo: PlaceRepository;
   locationResolver: LocationResolver;
   logger: AppLogger;
+  analytics: Analytics;
 };
+
+type RouteMode = "new" | "rebuild" | "rebuild_without_place";
 
 const LOCATION_INPUT_HELP = [
   "Можно отправить геолокацию с телефона или написать адрес обычным сообщением:",
@@ -101,7 +105,7 @@ const FEEDBACK_REASONS = new Set<string>(FEEDBACK_REASON_BUTTONS);
 
 export function registerBotHandlers(
   bot: Bot,
-  { config, repo, locationResolver, logger }: RegisterBotHandlersOptions
+  { config, repo, locationResolver, logger, analytics }: RegisterBotHandlersOptions
 ): void {
   const pendingConfirmations = new Map<number, PendingConfirmation>();
   const lastLocations = new Map<number, LastLocation>();
@@ -111,6 +115,9 @@ export function registerBotHandlers(
     const startedAt = Date.now();
     try {
       if (isRateLimited(ctx, lastUpdateByChat, config.CHAT_COOLDOWN_MS, startedAt)) {
+        analytics.track("rate_limited", ctx, {
+          cooldownMs: config.CHAT_COOLDOWN_MS
+        });
         await ctx.reply(RATE_LIMITED_MESSAGE);
         return;
       }
@@ -131,6 +138,7 @@ export function registerBotHandlers(
   });
 
   bot.command("start", async (ctx) => {
+    analytics.track("start", ctx);
     if (ctx.chat?.id) {
       pendingConfirmations.delete(ctx.chat.id);
       lastLocations.delete(ctx.chat.id);
@@ -146,11 +154,11 @@ export function registerBotHandlers(
   });
 
   bot.command("random", async (ctx) => {
-    await sendRandomSuggestion(ctx, repo, lastLocations, config.SEARCH_RADIUS_METERS);
+    await sendRandomSuggestion(ctx, repo, lastLocations, analytics, config.SEARCH_RADIUS_METERS);
   });
 
   bot.hears(RANDOM_BUTTON_TEXT, async (ctx) => {
-    await sendRandomSuggestion(ctx, repo, lastLocations, config.SEARCH_RADIUS_METERS);
+    await sendRandomSuggestion(ctx, repo, lastLocations, analytics, config.SEARCH_RADIUS_METERS);
   });
 
   bot.hears(MORE_NEARBY_BUTTON_TEXT, async (ctx) => {
@@ -166,7 +174,7 @@ export function registerBotHandlers(
       pendingConfirmations.delete(chatId);
     }
 
-    await repeatLastAction(ctx, repo, lastLocations, lastLocation);
+    await repeatLastAction(ctx, repo, lastLocations, analytics, lastLocation);
   });
 
   bot.hears(REBUILD_ROUTE_BUTTON_TEXT, async (ctx) => {
@@ -185,7 +193,7 @@ export function registerBotHandlers(
       return;
     }
 
-    await repeatLastAction(ctx, repo, lastLocations, lastLocation, {
+    await repeatLastAction(ctx, repo, lastLocations, analytics, lastLocation, {
       preserveCurrentRouteOnFailure: true,
       rebuildCurrentRouteOnly: true
     });
@@ -228,7 +236,11 @@ export function registerBotHandlers(
     }
 
     const scenario = PLACE_SCENARIOS[scenarioKey];
-    await sendNearbySuggestion(ctx, repo, lastLocations, {
+    analytics.track("scenario_selected", ctx, {
+      scenario: scenarioKey,
+      categorySlugs: scenario.categories
+    });
+    await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
       lat: lastLocation.lat,
       lon: lastLocation.lon,
       radiusMeters: lastLocation.radiusMeters,
@@ -246,6 +258,12 @@ export function registerBotHandlers(
       await askForLocation(ctx, lastLocations);
       return;
     }
+
+    analytics.track("route_step_replace_started", ctx, {
+      durationHours: lastLocation.lastRoute.durationHours,
+      routePlaceIds: lastLocation.lastRoute.steps.map((step) => step.placeId),
+      routeSteps: lastLocation.lastRoute.steps.length
+    });
 
     lastLocations.set(chatId, {
       ...lastLocation,
@@ -308,6 +326,7 @@ export function registerBotHandlers(
       updatedAt: Date.now()
     });
 
+    analytics.track("feedback_started", ctx, feedbackStartedPayload(target));
     await ctx.reply("Что не так?", {
       reply_markup: feedbackReasonKeyboard()
     });
@@ -326,12 +345,18 @@ export function registerBotHandlers(
       return;
     }
 
+    analytics.track("route_duration_selected", ctx, {
+      durationHours
+    });
     await sendRoute(
       ctx,
       repo,
       lastLocations,
       lastLocation,
-      durationHours
+      durationHours,
+      undefined,
+      [],
+      "new"
     );
   });
 
@@ -354,6 +379,12 @@ export function registerBotHandlers(
       pendingConfirmations.delete(ctx.chat.id);
     }
     const { latitude, longitude } = ctx.message.location;
+    analytics.track("location_submitted", ctx, {
+      locationKind: "telegram_location",
+      latRounded: roundCoord(latitude),
+      lonRounded: roundCoord(longitude),
+      radiusMeters: config.SEARCH_RADIUS_METERS
+    });
     await rememberLocationAndAskScenario(ctx, lastLocations, {
       lat: latitude,
       lon: longitude,
@@ -375,6 +406,10 @@ export function registerBotHandlers(
     }
 
     if (ctx.message.text.length > config.MAX_TEXT_INPUT_LENGTH) {
+      analytics.track("text_too_long", ctx, {
+        length: ctx.message.text.length,
+        maxLength: config.MAX_TEXT_INPUT_LENGTH
+      });
       await ctx.reply(
         `Сообщение слишком длинное. Напиши адрес или ориентир короче, до ${config.MAX_TEXT_INPUT_LENGTH} символов.`,
         { reply_markup: mainKeyboardFor(ctx, lastLocations) }
@@ -397,6 +432,10 @@ export function registerBotHandlers(
 
     if (FEEDBACK_REASONS.has(ctx.message.text) && lastLocation?.pendingFeedbackTarget) {
       logFeedback(ctx, logger, lastLocation.pendingFeedbackTarget, ctx.message.text as FeedbackReasonButtonText);
+      analytics.track("feedback_sent", ctx, feedbackSentPayload(
+        lastLocation.pendingFeedbackTarget,
+        ctx.message.text as FeedbackReasonButtonText
+      ));
       lastLocations.set(chatId, {
         ...lastLocation,
         pendingFeedbackTarget: null,
@@ -526,6 +565,12 @@ export function registerBotHandlers(
       if (chatId) {
         pendingConfirmations.delete(chatId);
       }
+      analytics.track("location_submitted", ctx, {
+        locationKind: "coordinates_text",
+        latRounded: roundCoord(coordinates.lat),
+        lonRounded: roundCoord(coordinates.lon),
+        radiusMeters: config.SEARCH_RADIUS_METERS
+      });
       await rememberLocationAndAskScenario(ctx, lastLocations, {
         lat: coordinates.lat,
         lon: coordinates.lon,
@@ -537,6 +582,10 @@ export function registerBotHandlers(
 
     let resolvedLocation;
     try {
+      analytics.track("location_submitted", ctx, {
+        locationKind: "text_address",
+        textLength: ctx.message.text.length
+      });
       resolvedLocation = await locationResolver.resolve(ctx.message.text);
     } catch (error) {
       logger.warn(
@@ -547,6 +596,9 @@ export function registerBotHandlers(
         },
         "address_geocoding_failed"
       );
+      analytics.track("location_failed", ctx, {
+        reason: "geocoder_error"
+      });
       await ctx.reply(
         "Сейчас не получилось проверить адрес через геокодер. Попробуй ещё раз чуть позже или отправь локацию с телефона.",
         { reply_markup: mainKeyboardFor(ctx, lastLocations) }
@@ -558,6 +610,9 @@ export function registerBotHandlers(
       if (chatId) {
         pendingConfirmations.delete(chatId);
       }
+      analytics.track("location_failed", ctx, {
+        reason: "geocoder_failed"
+      });
       await ctx.reply(
         "Не смог точно понять адрес. Напиши подробнее: улица и дом, например «Тверская 7», или отправь геолокацию с телефона.",
         { reply_markup: mainKeyboardFor(ctx, lastLocations) }
@@ -579,6 +634,13 @@ export function registerBotHandlers(
       },
       "location_resolved"
     );
+    analytics.track("location_resolved", ctx, {
+      status: resolvedLocation.status,
+      confidence: resolvedLocation.confidence,
+      kind: resolvedLocation.kind,
+      latRounded: roundCoord(resolvedLocation.lat),
+      lonRounded: roundCoord(resolvedLocation.lon)
+    });
 
     if (resolvedLocation.status === "needs_confirmation") {
       if (chatId) {
@@ -885,6 +947,21 @@ async function sendNearbySuggestion(
   });
 
   if (!result) {
+    if (chatId && lastLocation) {
+      lastLocations.set(chatId, {
+        ...lastLocation,
+        lastAction: options.action ?? null,
+        lastSuggestedPlace: null,
+        pendingRouteStart: null,
+        lastRoute: null,
+        pendingRouteReplacement: false,
+        pendingRouteReplacementExcludePlaceId: null,
+        pendingFeedbackTarget: null,
+        lastResultKind: null,
+        updatedAt: Date.now()
+      });
+    }
+
     const fallbackRadiusMeters = Math.max(options.radiusMeters * 2, 2500);
     await ctx.reply(
       `Рядом в радиусе ${fallbackRadiusMeters} м пока нет открытых мест под этот сценарий. Можно сменить категорию или попробовать «Выбери сам».`,

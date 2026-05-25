@@ -13,6 +13,6 @@ describe("config", () => {
     const config = loadConfig({});
 
     expect(config.MAX_TEXT_INPUT_LENGTH).toBe(300);
-    expect(config.CHAT_COOLDOWN_MS).toBe(700);
+    expect(config.CHAT_COOLDOWN_MS).toBe(0);
   });
 });

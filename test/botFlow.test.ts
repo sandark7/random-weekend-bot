@@ -36,6 +36,7 @@ type NearbyCall = {
 type HarnessOptions = {
   resolverResult?: ResolvedLocation;
   resolverThrows?: boolean;
+  emptyCategorySlugs?: readonly string[];
   noRoute?: boolean;
   noReplacement?: boolean;
   chatCooldownMs?: number;
@@ -341,6 +342,26 @@ describe("bot conversation flow", () => {
     await sendText(bot, "🔄 Сменить категорию");
 
     expect(replies.at(-1)?.text).toContain("Что хочется сделать?");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
+  });
+
+  it("clears stale place result context when a new scenario has no places", async () => {
+    const { bot, replies } = createHarness({ emptyCategorySlugs: ["coffee", "breakfast", "quick_bite"] });
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, "🏛 Город");
+    expect(replies.at(-1)?.text).toContain("ГЭС-2");
+
+    await sendText(bot, "☕ Кофе / перекус");
+
+    expect(replies.at(-1)?.text).toContain("пока нет открытых мест");
     expect(replies.at(-1)?.replyMarkup).toMatchObject({
       keyboard: [
         [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
@@ -662,6 +683,9 @@ function createHarness(options: HarnessOptions = {}) {
       }
 
       const categorySlug = query.categorySlug ?? "restaurant";
+      if (options.emptyCategorySlugs?.includes(categorySlug)) {
+        return [];
+      }
       if (categorySlug === "bar") {
         return [
           makeSuggestion({

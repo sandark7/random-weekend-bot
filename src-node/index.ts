@@ -1,4 +1,5 @@
 import { ensureRuntimeDirectories, loadConfig } from "./config.js";
+import { createAnalytics } from "./analytics/analytics.js";
 import { createCityDateBot } from "./bot/createBot.js";
 import { openDatabase } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
@@ -21,9 +22,10 @@ async function main(): Promise<void> {
 
   const database = openDatabase(config);
   const repo = new PlaceRepository(database.sqlite, config);
+  const analytics = createAnalytics({ db: database.sqlite, config, logger });
   const geocoder = new NominatimGeocoder(config, logger);
   const locationResolver = new LocationResolver(geocoder, config);
-  const bot = createCityDateBot({ config, repo, locationResolver, logger });
+  const bot = createCityDateBot({ config, repo, locationResolver, logger, analytics });
   const server = createServer({ bot, config, logger });
   let pollingStarted = false;
 
