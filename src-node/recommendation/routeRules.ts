@@ -25,6 +25,7 @@ export {
 export const MIN_ROUTE_FILL_RATIO = 0.8;
 export const MAX_ROUTE_OVERRUN_MINUTES = 25;
 const DRINK_ALLOWED_FROM_MINUTES = 17 * 60;
+const RELAX_ALLOWED_FROM_MINUTES = 17 * 60;
 const BREAKFAST_ALLOWED_UNTIL_MINUTES = 14 * 60;
 
 const DEFAULT_VISIT_DURATION_MINUTES = 45;
@@ -59,6 +60,7 @@ export function allowedRouteScenarios(arrival: Date, remainingMinutes: number): 
   const evening = minutes >= 17 * 60;
   return ROUTE_SCENARIO_POOL.filter((scenarioKey) => {
     if (scenarioKey === "drink" && minutes < DRINK_ALLOWED_FROM_MINUTES) return false;
+    if (scenarioKey === "relax" && minutes < RELAX_ALLOWED_FROM_MINUTES) return false;
     if (scenarioKey === "coffee_snack" && evening) return remainingMinutes <= 90;
     return minScenarioVisitDurationMinutes(scenarioKey) <= remainingMinutes + MAX_ROUTE_OVERRUN_MINUTES;
   });
@@ -80,6 +82,7 @@ export function routeCandidateAllowed(
 
   const minutes = moscowMinutes(arrival);
   if (minutes < DRINK_ALLOWED_FROM_MINUTES && hasAnyCategory(suggestion, SCENARIO_CATEGORIES.drink)) return false;
+  if (minutes < RELAX_ALLOWED_FROM_MINUTES && hasAnyCategory(suggestion, SCENARIO_CATEGORIES.relax)) return false;
   if (minutes >= BREAKFAST_ALLOWED_UNTIL_MINUTES && hasCategory(suggestion, "breakfast")) return false;
 
   return true;

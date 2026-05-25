@@ -6,6 +6,7 @@ import {
   replaceRouteStep
 } from "../src-node/recommendation/routeBuilder.js";
 import {
+  allowedRouteScenarios,
   MAX_ROUTE_TRANSITION_METERS,
   placeVisitDurationMinutes,
   routeCandidateAllowed,
@@ -71,6 +72,20 @@ describe("route planner", () => {
 
     expect(routeCandidateAllowed(bar, new Date("2026-05-24T13:59:00Z"), state)).toBe(false);
     expect(routeCandidateAllowed(bar, new Date("2026-05-24T14:00:00Z"), state)).toBe(true);
+  });
+
+  it("does not allow relax places in automatic routes before 17:00", () => {
+    const bathhouse = makeSuggestion({ placeId: 1, slug: "bathhouse", lat: 55.75, lon: 37.61 });
+    const state = {
+      lastPrimaryCategory: null,
+      usedFineDining: 0,
+      usedBathhouse: 0
+    };
+
+    expect(allowedRouteScenarios(new Date("2026-05-24T13:59:00Z"), 180)).not.toContain("relax");
+    expect(allowedRouteScenarios(new Date("2026-05-24T14:00:00Z"), 180)).toContain("relax");
+    expect(routeCandidateAllowed(bathhouse, new Date("2026-05-24T13:59:00Z"), state)).toBe(false);
+    expect(routeCandidateAllowed(bathhouse, new Date("2026-05-24T14:00:00Z"), state)).toBe(true);
   });
 
   it("does not allow breakfast places after 14:00", () => {
@@ -357,7 +372,7 @@ describe("route planner", () => {
       route: originalRoute,
       stepIndex: 1,
       radiusMeters: 1500,
-      excludePlaceIds: [],
+      excludePlaceIds: [99],
       durationHours: 3
     });
 

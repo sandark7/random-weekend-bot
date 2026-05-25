@@ -204,10 +204,7 @@ export function replaceRouteStep(
   const origin = previousStep
     ? { lat: previousStep.suggestion.lat, lon: previousStep.suggestion.lon }
     : start;
-  const excludedPlaceIds = new Set([
-    ...options.excludePlaceIds,
-    ...options.route.map((step) => step.suggestion.placeId)
-  ]);
+  const routePlaceIds = options.route.map((step) => step.suggestion.placeId);
   const otherSteps = options.route.filter((_, index) => index !== options.stepIndex);
   const usedFineDining = otherSteps.filter((step) => hasCategory(step.suggestion, "fine_dining")).length;
   const usedBathhouse = otherSteps.filter((step) => hasCategory(step.suggestion, "bathhouse")).length;
@@ -216,50 +213,8 @@ export function replaceRouteStep(
   const transitionRadiusMeters = Math.min(options.radiusMeters, MAX_ROUTE_TRANSITION_METERS);
   const scenario = oldStep.scenario;
 
-  const candidates = findNearbyByCategories(repo, {
-    lat: origin.lat,
-    lon: origin.lon,
-    radiusMeters: transitionRadiusMeters,
-    categorySlugs: scenario.categories,
-    now: oldStep.arrival,
-    limit: 500
-  })
-    .filter((suggestion) => !excludedPlaceIds.has(suggestion.placeId))
-    .filter((suggestion) => routeCandidateAllowed(suggestion, oldStep.arrival, {
-      lastPrimaryCategory,
-      usedFineDining,
-      usedBathhouse
-    }))
-    .filter((suggestion) => primaryCategorySlug(suggestion) !== nextPrimaryCategory)
-    .map((suggestion) => {
-      const walkMinutes = walkingMinutes(suggestion.distanceMeters);
-      const visitDurationMinutes = placeVisitDurationMinutes(suggestion);
-      const nextWalkMinutes = nextStep
-        ? walkingMinutes(haversineDistanceMeters(
-            { lat: suggestion.lat, lon: suggestion.lon },
-            { lat: nextStep.suggestion.lat, lon: nextStep.suggestion.lon }
-          ))
-        : 0;
-
-      return {
-        suggestion,
-        walkMinutes,
-        visitDurationMinutes,
-        nextWalkMinutes
-      };
-    })
-    .filter((candidate) => candidate.walkMinutes <= MAX_ROUTE_WALK_MINUTES)
-    .filter((candidate) => candidate.nextWalkMinutes <= MAX_ROUTE_WALK_MINUTES)
-    .filter((candidate) => (
-      isOpenForDuration(candidate.suggestion.openingHoursJson, oldStep.arrival, candidate.visitDurationMinutes) === true
-    ))
-    .sort((left, right) => (
-      replacementCandidateRank(left.suggestion, left.visitDurationMinutes, oldStep) -
-      replacementCandidateRank(right.suggestion, right.visitDurationMinutes, oldStep)
-    ));
-
-  const topCandidates = candidates.slice(0, ROUTE_CANDIDATE_POOL_SIZE);
-  const picked = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+  const picked = pickReplacementCandidate([])
+    ?? pickReplacementCandidate(options.excludePlaceIds);
   if (!picked) {
     return null;
   }
@@ -291,6 +246,63 @@ export function replaceRouteStep(
     oldStep,
     newStep
   };
+
+  function pickReplacementCandidate(extraExcludePlaceIds: number[]): {
+    suggestion: PlaceSuggestion;
+    walkMinutes: number;
+    visitDurationMinutes: number;
+    nextWalkMinutes: number;
+  } | null {
+    const excludedPlaceIds = new Set([...routePlaceIds, ...extraExcludePlaceIds]);
+    const candidates = findNearbyByCategories(repo, {
+      lat: origin.lat,
+      lon: origin.lon,
+      radiusMeters: transitionRadiusMeters,
+      categorySlugs: scenario.categories,
+      now: oldStep.arrival,
+      limit: 500
+    })
+      .filter((suggestion) => !excludedPlaceIds.has(suggestion.placeId))
+      .filter((suggestion) => routeCandidateAllowed(suggestion, oldStep.arrival, {
+        lastPrimaryCategory,
+        usedFineDining,
+        usedBathhouse
+      }))
+      .filter((suggestion) => primaryCategorySlug(suggestion) !== nextPrimaryCategory)
+      .map((suggestion) => {
+        const walkMinutes = walkingMinutes(suggestion.distanceMeters);
+        const visitDurationMinutes = placeVisitDurationMinutes(suggestion);
+        const nextWalkMinutes = nextStep
+          ? walkingMinutes(haversineDistanceMeters(
+              { lat: suggestion.lat, lon: suggestion.lon },
+              { lat: nextStep.suggestion.lat, lon: nextStep.suggestion.lon }
+            ))
+          : 0;
+
+        return {
+          suggestion,
+          walkMinutes,
+          visitDurationMinutes,
+          nextWalkMinutes
+        };
+      })
+      .filter((candidate) => candidate.walkMinutes <= MAX_ROUTE_WALK_MINUTES)
+      .filter((candidate) => candidate.nextWalkMinutes <= MAX_ROUTE_WALK_MINUTES)
+      .filter((candidate) => (
+        isOpenForDuration(
+          candidate.suggestion.openingHoursJson,
+          oldStep.arrival,
+          candidate.visitDurationMinutes
+        ) === true
+      ))
+      .sort((left, right) => (
+        replacementCandidateRank(left.suggestion, left.visitDurationMinutes, oldStep) -
+        replacementCandidateRank(right.suggestion, right.visitDurationMinutes, oldStep)
+      ));
+
+    const topCandidates = candidates.slice(0, ROUTE_CANDIDATE_POOL_SIZE);
+    return topCandidates[Math.floor(Math.random() * topCandidates.length)] ?? null;
+  }
 }
 
 export function recalculateRouteSteps(

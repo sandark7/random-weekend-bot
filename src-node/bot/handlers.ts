@@ -401,7 +401,8 @@ export function registerBotHandlers(
         routeLocation,
         lastLocation.lastRoute.durationHours,
         lastLocation.lastRoute.routeStart,
-        [lastLocation.pendingRouteReplacementExcludePlaceId]
+        [lastLocation.pendingRouteReplacementExcludePlaceId],
+        true
       );
       return;
     }
@@ -690,7 +691,8 @@ async function sendRoute(
   lastLocation: LastLocation,
   durationHours: RouteDurationHours,
   routeStart?: RouteStart,
-  extraExcludePlaceIds: number[] = []
+  extraExcludePlaceIds: number[] = [],
+  ignoreRecentPlaceIds = false
 ): Promise<void> {
   const start = routeStart ?? {
     lat: lastLocation.lat,
@@ -703,7 +705,9 @@ async function sendRoute(
     start: { lat: start.lat, lon: start.lon },
     radiusMeters: lastLocation.radiusMeters,
     now: startedAt,
-    excludePlaceIds: [...lastLocation.recentPlaceIds, ...extraExcludePlaceIds],
+    excludePlaceIds: ignoreRecentPlaceIds
+      ? extraExcludePlaceIds
+      : [...lastLocation.recentPlaceIds, ...extraExcludePlaceIds],
     durationHours
   });
 
