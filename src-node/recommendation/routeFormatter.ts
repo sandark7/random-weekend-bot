@@ -22,11 +22,11 @@ export function formatRoute(durationHours: RouteDurationHours, locationLabel: st
 }
 
 export function formatLocationIntro(label: string): string {
-  if (label === "вашей геолокацией" || label === "координатами") {
-    return `Ищу рядом с ${label}`;
+  if (label === "вашей геолокации" || label === "координат") {
+    return `Стартуем от ${label}`;
   }
 
-  return `Ищу рядом с: ${label}`;
+  return `Стартуем от: ${label}`;
 }
 
 export function formatRouteDuration(durationMinutes: number): string {

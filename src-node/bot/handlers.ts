@@ -5,6 +5,7 @@ import type { PlaceRepository } from "../db/placeRepository.js";
 import type { LocationResolver } from "../geo/locationResolver.js";
 import type { AppLogger } from "../logger.js";
 import { findNearbySuggestion } from "../recommendation/nearby.js";
+import { parseNaturalLanguageRequest } from "./naturalLanguageRequest.js";
 import {
   buildRoute,
   recalculateRouteSteps,
@@ -292,7 +293,7 @@ export function registerBotHandlers(
       updatedAt: Date.now()
     });
 
-    await ctx.reply("Какой пункт заменить?", {
+    await ctx.reply("Какой пункт заменить? Стартовую точку не меняю - маршрут всё равно строится от вашего адреса или геолокации.", {
       reply_markup: routeStepReplacementKeyboard(
         lastLocation.lastRoute.steps.map((step) => step.name)
       )
@@ -584,6 +585,158 @@ export function registerBotHandlers(
       });
       return;
     }
+
+const naturalLanguageRequest = parseNaturalLanguageRequest(ctx.message.text);
+if (naturalLanguageRequest) {
+  analytics.track("natural_language_request_parsed", ctx, {
+    scenario: naturalLanguageRequest.scenarioKey,
+    categorySlugs: naturalLanguageRequest.categorySlugs ?? null,
+    hasLocationQuery: Boolean(naturalLanguageRequest.locationQuery),
+    usedSavedLocation: !naturalLanguageRequest.locationQuery && Boolean(lastLocation)
+  });
+
+  if (!naturalLanguageRequest.locationQuery && lastLocation) {
+    await ctx.reply(
+      `Понял: ищу ${naturalLanguageRequest.humanLabel} рядом с: ${lastLocation.label}.`
+    );
+
+    await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
+      lat: lastLocation.lat,
+      lon: lastLocation.lon,
+      radiusMeters: lastLocation.radiusMeters,
+      locationLabel: lastLocation.label,
+      categorySlugs: naturalLanguageRequest.categorySlugs ?? PLACE_SCENARIOS[naturalLanguageRequest.scenarioKey].categories,
+      action: {
+        type: "scenario",
+        scenario: naturalLanguageRequest.scenarioKey
+      },
+      intro: `Ищу ${naturalLanguageRequest.humanLabel} рядом с: ${lastLocation.label}`
+    });
+    return;
+  }
+
+  if (!naturalLanguageRequest.locationQuery) {
+    await ctx.reply(
+      `Понял, хочется ${naturalLanguageRequest.humanLabel}. А откуда искать? Напишите адрес, метро или отправьте геолокацию.`,
+      { reply_markup: mainKeyboardFor(ctx, lastLocations) }
+    );
+    return;
+  }
+
+  let resolvedIntentLocation;
+  try {
+    analytics.track("location_submitted", ctx, {
+      locationKind: "text_address_with_intent",
+      textLength: ctx.message.text.length
+    });
+
+    resolvedIntentLocation = await locationResolver.resolve(naturalLanguageRequest.locationQuery);
+  } catch (error) {
+    logger.warn(
+      {
+        error,
+        userId: ctx.from?.id,
+        chatId: ctx.chat?.id
+      },
+      "address_geocoding_failed"
+    );
+
+    analytics.track("location_failed", ctx, {
+      reason: "geocoder_error",
+      locationKind: "text_address_with_intent"
+    });
+
+    await ctx.reply(
+      `Понял, что хочется ${naturalLanguageRequest.humanLabel}, но сейчас не получилось проверить адрес через геокодер. Попробуйте ещё раз чуть позже или отправьте локацию с телефона.`,
+      { reply_markup: mainKeyboardFor(ctx, lastLocations) }
+    );
+    return;
+  }
+
+  if (resolvedIntentLocation.status === "failed") {
+    if (chatId) {
+      pendingConfirmations.delete(chatId);
+    }
+
+    analytics.track("location_failed", ctx, {
+      reason: "geocoder_failed",
+      locationKind: "text_address_with_intent"
+    });
+
+    await ctx.reply(
+      `Понял, что хочется ${naturalLanguageRequest.humanLabel}, но не понял, откуда искать. Напишите адрес, метро или отправьте геолокацию.`,
+      { reply_markup: mainKeyboardFor(ctx, lastLocations) }
+    );
+    return;
+  }
+
+  analytics.track("location_resolved", ctx, {
+    status: resolvedIntentLocation.status,
+    confidence: resolvedIntentLocation.confidence,
+    kind: resolvedIntentLocation.kind,
+    latRounded: roundCoord(resolvedIntentLocation.lat),
+    lonRounded: roundCoord(resolvedIntentLocation.lon),
+    locationKind: "text_address_with_intent"
+  });
+
+  if (resolvedIntentLocation.status === "needs_confirmation") {
+    if (chatId) {
+      pendingConfirmations.set(chatId, {
+        status: "needs_confirmation",
+        confidence: "medium",
+        kind: resolvedIntentLocation.kind,
+        label: resolvedIntentLocation.label,
+        lat: resolvedIntentLocation.lat,
+        lon: resolvedIntentLocation.lon,
+        query: resolvedIntentLocation.query,
+        createdAt: Date.now()
+      });
+    }
+
+    await ctx.reply(`Похоже, вы имели в виду: ${resolvedIntentLocation.label}?`, {
+      reply_markup: locationConfirmationKeyboard()
+    });
+    return;
+  }
+
+  if (chatId) {
+    pendingConfirmations.delete(chatId);
+    lastLocations.set(chatId, {
+      lat: resolvedIntentLocation.lat,
+      lon: resolvedIntentLocation.lon,
+      label: resolvedIntentLocation.label,
+      radiusMeters: config.SEARCH_RADIUS_METERS,
+      recentPlaceIds: [],
+      lastAction: null,
+      lastSuggestedPlace: null,
+      pendingRouteStart: null,
+      lastRoute: null,
+      pendingRouteReplacement: false,
+      pendingRouteReplacementExcludePlaceId: null,
+      pendingFeedbackTarget: null,
+      lastResultKind: null,
+      updatedAt: Date.now()
+    });
+  }
+
+  await ctx.reply(
+    `Понял: ищу ${naturalLanguageRequest.humanLabel} рядом с: ${resolvedIntentLocation.label}.`
+  );
+
+  await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
+    lat: resolvedIntentLocation.lat,
+    lon: resolvedIntentLocation.lon,
+    radiusMeters: config.SEARCH_RADIUS_METERS,
+    locationLabel: resolvedIntentLocation.label,
+    categorySlugs: naturalLanguageRequest.categorySlugs ?? PLACE_SCENARIOS[naturalLanguageRequest.scenarioKey].categories,
+    action: {
+      type: "scenario",
+      scenario: naturalLanguageRequest.scenarioKey
+    },
+    intro: `Ищу ${naturalLanguageRequest.humanLabel} рядом с: ${resolvedIntentLocation.label}`
+  });
+  return;
+}
 
     let resolvedLocation;
     try {

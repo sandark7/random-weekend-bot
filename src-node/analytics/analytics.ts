@@ -9,6 +9,7 @@ export type AnalyticsEventName =
   | "location_submitted"
   | "location_resolved"
   | "location_failed"
+  | "natural_language_request_parsed"
   | "scenario_selected"
   | "random_selected"
   | "place_suggested"
