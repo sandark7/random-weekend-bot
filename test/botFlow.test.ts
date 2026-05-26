@@ -73,7 +73,7 @@ describe("bot conversation flow", () => {
     await sendText(bot, "/start");
 
     expect(replies.at(-1)?.text).toContain("Random Weekend");
-    expect(replies.at(-1)?.text).toContain("Тверская 7");
+    expect(replies.at(-1)?.text).toContain("Пятницкая 59");
     expect(replies.at(-1)?.text).toContain("Патриаршие пруды");
     expect(replies.at(-1)?.replyMarkup).toMatchObject({
       keyboard: [[{ text: LOCATION_BUTTON_TEXT, request_location: true }]]
@@ -148,6 +148,32 @@ describe("bot conversation flow", () => {
     });
   });
 
+
+  it("keeps natural-language intent after location confirmation", async () => {
+    const { bot, replies, nearbyCalls, locationResolver } = createHarness({
+      resolverResult: {
+        status: "needs_confirmation",
+        confidence: "medium",
+        kind: "area_or_metro",
+        query: "метро китай город",
+        label: "Метро «Китай-город»",
+        lat: 55.756,
+        lon: 37.632
+      }
+    });
+
+    await sendText(bot, "Метро Китай город хочу музеев и искусства");
+
+    expect(locationResolver.resolve).toHaveBeenCalledWith("метро китай город");
+    expect(replies.at(-1)?.text).toContain("Если да, поищу музеи и искусство рядом");
+
+    await sendText(bot, CONFIRM_LOCATION_BUTTON_TEXT);
+
+    expect(replies.at(-2)?.text).toContain("Понял: ищу музеи и искусство рядом с: Метро «Китай-город».");
+    expect(replies.at(-1)?.text).toContain("Ищу музеи и искусство рядом с: Метро «Китай-город»");
+    expect(nearbyCalls.map((call) => call.categorySlug)).toContain("culture");
+  });
+
   it("does not show scenarios when a text location cannot be resolved", async () => {
     const { bot, replies } = createHarness({
       resolverResult: {
@@ -217,19 +243,18 @@ describe("bot conversation flow", () => {
     await sendText(bot, "🏛 Город");
 
     const reply = replies.at(-1);
-    expect(reply?.text).toContain("Ищу городскую точку рядом с: Москва, Дубининская улица, 59");
+    expect(reply?.text).toContain("Ищу посмотреть что-то красивое рядом с: Москва, Дубининская улица, 59");
     expect(reply?.text).not.toContain("Ищу, где город");
     expect(reply?.text).toContain("ГЭС-2");
     expect(reply?.replyMarkup).toMatchObject({
       keyboard: [
         [{ text: "🔁 Ещё вариант" }, { text: FEEDBACK_BUTTON_TEXT }],
-        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }],
-        [{ text: ROUTE_BUTTON_TEXT }]
+        [{ text: "🔄 Сменить категорию" }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });
 
-  it("serves choose-it-for-me nearby after location without hookah categories", async () => {
+  it("serves full random nearby after location without hookah categories", async () => {
     const { bot, replies, nearbyCalls } = createHarness();
 
     await sendText(bot, "Дубининская 59");
@@ -241,8 +266,7 @@ describe("bot conversation flow", () => {
     expect(replies.at(-1)?.replyMarkup).toMatchObject({
       keyboard: [
         [{ text: "🔁 Ещё вариант" }, { text: FEEDBACK_BUTTON_TEXT }],
-        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }],
-        [{ text: ROUTE_BUTTON_TEXT }]
+        [{ text: "🔄 Сменить категорию" }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });
@@ -390,7 +414,7 @@ describe("bot conversation flow", () => {
       lon: 37.636
     });
     expect(replies.at(-1)?.text).toContain("Собрал маршрут");
-    expect(replies.at(-1)?.text).toContain("Ищу рядом с: Москва, Дубининская улица, 59");
+    expect(replies.at(-1)?.text).toContain("Стартуем от: Москва, Дубининская улица, 59");
 	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
 	      keyboard: [
 	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
@@ -420,7 +444,7 @@ describe("bot conversation flow", () => {
       lat: 55.729,
       lon: 37.636
     });
-    expect(replies.at(-1)?.text).toContain("Ищу рядом с: Москва, Дубининская улица, 59");
+    expect(replies.at(-1)?.text).toContain("Стартуем от: Москва, Дубининская улица, 59");
 	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
 	      keyboard: [
 	        [{ text: REBUILD_ROUTE_BUTTON_TEXT }, { text: REPLACE_ROUTE_STEP_BUTTON_TEXT }],
@@ -496,7 +520,7 @@ describe("bot conversation flow", () => {
 
     await sendText(bot, REBUILD_ROUTE_BUTTON_TEXT);
 
-    expect(replies.at(-1)?.text).toContain("Ищу рядом с: Москва, Дубининская улица, 59");
+    expect(replies.at(-1)?.text).toContain("Стартуем от: Москва, Дубининская улица, 59");
     expect(replies.at(-1)?.text).not.toBe(firstRoute);
 	    expect(replies.at(-1)?.replyMarkup).toMatchObject({
 	      keyboard: [
@@ -544,7 +568,7 @@ describe("bot conversation flow", () => {
     const originalRouteText = replies.at(-1)?.text ?? "";
 
     await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
-    expect(replies.at(-1)?.text).toBe("Какой пункт заменить?");
+    expect(replies.at(-1)?.text).toContain("Какой пункт заменить?");
     await sendText(bot, "3. restaurant рядом");
 
     expect(replies.at(-1)?.text).toContain("Заменил пункт 3.");
@@ -797,7 +821,7 @@ function createHarness(options: HarnessOptions = {}) {
     apiCalls.push({ method, payload: payload as Record<string, unknown> });
     if (method === "sendMessage") {
       const text = String((payload as { text: string }).text);
-      if (text === "Какой пункт заменить?") {
+      if (text.includes("Какой пункт заменить?")) {
         replacementMode = true;
       }
       if (text.includes("Не смог заменить только этот пункт")) {

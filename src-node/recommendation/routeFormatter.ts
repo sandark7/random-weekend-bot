@@ -6,7 +6,7 @@ import type { RouteDurationHours } from "./scenarios.js";
 export function formatRoute(durationHours: RouteDurationHours, locationLabel: string, route: RouteStep[]): string {
   const lines = [
     `<b>${escapeHtml(`Собрал маршрут примерно на ${formatRouteDuration(routeDuration(route))}`)}</b>`,
-    escapeHtml(formatLocationIntro(locationLabel)),
+    escapeHtml(formatRouteStartIntro(locationLabel)),
     ""
   ];
 
@@ -22,8 +22,24 @@ export function formatRoute(durationHours: RouteDurationHours, locationLabel: st
 }
 
 export function formatLocationIntro(label: string): string {
-  if (label === "вашей геолокации" || label === "координат") {
-    return `Стартуем от ${label}`;
+  if (label === "вашей геолокацией" || label === "вашей геолокации") {
+    return "Ищу рядом с вашей геолокацией";
+  }
+
+  if (label === "координатами" || label === "координат") {
+    return "Ищу рядом с координатами";
+  }
+
+  return `Ищу рядом с: ${label}`;
+}
+
+function formatRouteStartIntro(label: string): string {
+  if (label === "вашей геолокацией" || label === "вашей геолокации") {
+    return "Стартуем от вашей геолокации";
+  }
+
+  if (label === "координатами" || label === "координат") {
+    return "Стартуем от координат";
   }
 
   return `Стартуем от: ${label}`;

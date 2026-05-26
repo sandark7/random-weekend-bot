@@ -547,7 +547,16 @@ export function registerBotHandlers(
       if (chatId) {
         pendingConfirmations.delete(chatId);
       }
-      await ctx.reply("Ок, напиши адрес подробнее: улица и дом, например «Тверская 7».", {
+
+      if (pending?.intent) {
+        await ctx.reply(
+          `Ок, тогда напишите другой адрес или метро, откуда искать ${pending.intent.humanLabel}.`,
+          { reply_markup: mainKeyboardFor(ctx, lastLocations) }
+        );
+        return;
+      }
+
+      await ctx.reply("Ок, напишите адрес подробнее: улицу и дом, например «Тверская 7».", {
         reply_markup: mainKeyboardFor(ctx, lastLocations)
       });
       return;
@@ -557,6 +566,44 @@ export function registerBotHandlers(
       if (chatId) {
         pendingConfirmations.delete(chatId);
       }
+
+      if (pending.intent) {
+        if (chatId) {
+          lastLocations.set(chatId, {
+            lat: pending.lat,
+            lon: pending.lon,
+            label: pending.label,
+            radiusMeters: config.SEARCH_RADIUS_METERS,
+            recentPlaceIds: [],
+            lastAction: null,
+            lastSuggestedPlace: null,
+            pendingRouteStart: null,
+            lastRoute: null,
+            pendingRouteReplacement: false,
+            pendingRouteReplacementExcludePlaceId: null,
+            pendingFeedbackTarget: null,
+            lastResultKind: null,
+            updatedAt: Date.now()
+          });
+        }
+
+        await ctx.reply(`Понял: ищу ${pending.intent.humanLabel} рядом с: ${pending.label}.`);
+
+        await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
+          lat: pending.lat,
+          lon: pending.lon,
+          radiusMeters: config.SEARCH_RADIUS_METERS,
+          locationLabel: pending.label,
+          categorySlugs: pending.intent.categorySlugs ?? PLACE_SCENARIOS[pending.intent.scenarioKey].categories,
+          action: {
+            type: "scenario",
+            scenario: pending.intent.scenarioKey
+          },
+          intro: `Ищу ${pending.intent.humanLabel} рядом с: ${pending.label}`
+        });
+        return;
+      }
+
       await rememberLocationAndAskScenario(ctx, lastLocations, {
         lat: pending.lat,
         lon: pending.lon,
@@ -689,13 +736,21 @@ if (naturalLanguageRequest) {
         lat: resolvedIntentLocation.lat,
         lon: resolvedIntentLocation.lon,
         query: resolvedIntentLocation.query,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        intent: {
+          scenarioKey: naturalLanguageRequest.scenarioKey,
+          categorySlugs: naturalLanguageRequest.categorySlugs,
+          humanLabel: naturalLanguageRequest.humanLabel
+        }
       });
     }
 
-    await ctx.reply(`Похоже, вы имели в виду: ${resolvedIntentLocation.label}?`, {
-      reply_markup: locationConfirmationKeyboard()
-    });
+    await ctx.reply(
+      `Похоже, вы имели в виду: ${resolvedIntentLocation.label}?
+
+Если да, поищу ${naturalLanguageRequest.humanLabel} рядом.`,
+      { reply_markup: locationConfirmationKeyboard() }
+    );
     return;
   }
 

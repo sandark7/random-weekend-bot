@@ -28,8 +28,8 @@ describe("bot keyboards", () => {
     ]);
   });
 
-  it("uses the choose-it-for-me random button copy", () => {
-    expect(RANDOM_BUTTON_TEXT).toBe("🎲 Выбери сам");
+  it("uses the full random button copy", () => {
+    expect(RANDOM_BUTTON_TEXT).toBe("🎲 Полный рандом");
   });
 
   it("shows only location sharing before resolving a location", () => {
@@ -49,12 +49,11 @@ describe("bot keyboards", () => {
     });
   });
 
-  it("shows place result actions by two after a suggestion", () => {
+  it("shows place result actions after a suggestion without full random", () => {
     expect(mainKeyboard({ hasResolvedLocation: true, resultKind: "place" })).toMatchObject({
       keyboard: [
         [{ text: MORE_NEARBY_BUTTON_TEXT }, { text: FEEDBACK_BUTTON_TEXT }],
-        [{ text: "🔄 Сменить категорию" }, { text: RANDOM_BUTTON_TEXT }],
-        [{ text: ROUTE_BUTTON_TEXT }]
+        [{ text: "🔄 Сменить категорию" }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
   });

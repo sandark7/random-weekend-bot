@@ -4,6 +4,12 @@ import type { PlaceSuggestion } from "../shared/types.js";
 
 const RECENT_PLACE_HISTORY_LIMIT = 30;
 
+export type PendingConfirmationIntent = {
+  scenarioKey: PlaceScenarioKey;
+  categorySlugs?: readonly string[];
+  humanLabel: string;
+};
+
 export type PendingConfirmation = {
   status: "needs_confirmation";
   confidence: "medium";
@@ -13,6 +19,7 @@ export type PendingConfirmation = {
   lon: number;
   query: string;
   createdAt: number;
+  intent?: PendingConfirmationIntent;
 };
 
 export type RouteStart = {
