@@ -597,7 +597,9 @@ export function registerBotHandlers(
           categorySlugs: pending.intent.categorySlugs ?? PLACE_SCENARIOS[pending.intent.scenarioKey].categories,
           action: {
             type: "scenario",
-            scenario: pending.intent.scenarioKey
+            scenario: pending.intent.scenarioKey,
+            categorySlugs: pending.intent.categorySlugs,
+            humanLabel: pending.intent.humanLabel
           },
           intro: `Ищу ${pending.intent.humanLabel} рядом с: ${pending.label}`
         });
@@ -655,7 +657,9 @@ if (naturalLanguageRequest) {
       categorySlugs: naturalLanguageRequest.categorySlugs ?? PLACE_SCENARIOS[naturalLanguageRequest.scenarioKey].categories,
       action: {
         type: "scenario",
-        scenario: naturalLanguageRequest.scenarioKey
+        scenario: naturalLanguageRequest.scenarioKey,
+        categorySlugs: naturalLanguageRequest.categorySlugs,
+        humanLabel: naturalLanguageRequest.humanLabel
       },
       intro: `Ищу ${naturalLanguageRequest.humanLabel} рядом с: ${lastLocation.label}`
     });
@@ -786,7 +790,9 @@ if (naturalLanguageRequest) {
     categorySlugs: naturalLanguageRequest.categorySlugs ?? PLACE_SCENARIOS[naturalLanguageRequest.scenarioKey].categories,
     action: {
       type: "scenario",
-      scenario: naturalLanguageRequest.scenarioKey
+      scenario: naturalLanguageRequest.scenarioKey,
+      categorySlugs: naturalLanguageRequest.categorySlugs,
+      humanLabel: naturalLanguageRequest.humanLabel
     },
     intro: `Ищу ${naturalLanguageRequest.humanLabel} рядом с: ${resolvedIntentLocation.label}`
   });
@@ -1001,10 +1007,12 @@ async function repeatLastAction(
       lon: lastLocation.lon,
       radiusMeters: lastLocation.radiusMeters,
       locationLabel: lastLocation.label,
-      categorySlugs: scenario.categories,
+      categorySlugs: action.categorySlugs ?? scenario.categories,
       excludeRecentPlaces: true,
       action,
-      intro: formatScenarioRepeatIntro(scenario.key, lastLocation.label)
+      intro: action.humanLabel
+        ? `Ещё вариант: ${action.humanLabel} рядом с: ${lastLocation.label}`
+        : formatScenarioRepeatIntro(scenario.key, lastLocation.label)
     });
     return;
   }

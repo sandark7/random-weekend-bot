@@ -12,6 +12,7 @@ import {
   FEEDBACK_BUTTON_TEXT,
   KEEP_ROUTE_BUTTON_TEXT,
   LOCATION_BUTTON_TEXT,
+  MORE_NEARBY_BUTTON_TEXT,
   RANDOM_BUTTON_TEXT,
   REBUILD_ROUTE_BUTTON_TEXT,
   REBUILD_WITHOUT_ROUTE_STEP_BUTTON_TEXT,
@@ -356,6 +357,20 @@ describe("bot conversation flow", () => {
       lat: 55.729,
       lon: 37.636
     });
+  });
+
+
+  it("keeps narrowed natural-language categories for more nearby", async () => {
+    const { bot, replies, nearbyCalls } = createHarness();
+
+    await sendText(bot, "Метро Китай город хочу музеев и искусства");
+    await sendText(bot, MORE_NEARBY_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("Ещё вариант: музеи и искусство рядом с:");
+    expect(nearbyCalls.at(-1)).toMatchObject({ categorySlug: "culture" });
+    expect(nearbyCalls.map((call) => call.categorySlug)).not.toContain("landmark");
+    expect(nearbyCalls.map((call) => call.categorySlug)).not.toContain("viewpoint");
+    expect(nearbyCalls.map((call) => call.categorySlug)).not.toContain("park");
   });
 
   it("returns to scenario menu after changing category", async () => {

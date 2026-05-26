@@ -32,7 +32,12 @@ export type RouteStart = {
 };
 
 export type LastAction =
-  | { type: "scenario"; scenario: PlaceScenarioKey }
+  | {
+      type: "scenario";
+      scenario: PlaceScenarioKey;
+      categorySlugs?: readonly string[];
+      humanLabel?: string;
+    }
   | { type: "random" }
   | { type: "route"; durationHours: RouteDurationHours; routeStart?: RouteStart };
 
