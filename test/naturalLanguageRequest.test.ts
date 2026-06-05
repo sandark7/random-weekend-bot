@@ -34,6 +34,13 @@ describe("parseNaturalLanguageRequest", () => {
     expect(parseNaturalLanguageRequest("метро китай город")).toBeNull();
   });
 
+  it("does not parse bare place names as scenario requests", () => {
+    expect(parseNaturalLanguageRequest("Парк Горького")).toBeNull();
+    expect(parseNaturalLanguageRequest("бар Стрелка")).toBeNull();
+    expect(parseNaturalLanguageRequest("Кофемания на Павелецкой")).toBeNull();
+    expect(parseNaturalLanguageRequest("Тверская 7")).toBeNull();
+  });
+
   it("returns intent without location", () => {
     expect(parseNaturalLanguageRequest("хочу музеев")).toEqual({
       locationQuery: null,

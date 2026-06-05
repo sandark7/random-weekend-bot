@@ -190,6 +190,24 @@ const STOP_WORDS = new Set([
   "какой-нибудь"
 ]);
 
+const REQUEST_MARKER_WORDS = new Set([
+  "хочу",
+  "хочется",
+  "хотим",
+  "надо",
+  "нужно",
+  "можно",
+  "где",
+  "куда",
+  "найди",
+  "найти",
+  "посоветуй",
+  "покажи",
+  "подбери",
+  "ищу",
+  "ищем"
+]);
+
 const LOCATION_HINT_WORDS = new Set([
   "метро",
   "м",
@@ -218,6 +236,11 @@ export function parseNaturalLanguageRequest(text: string): ParsedNaturalLanguage
     return null;
   }
 
+  const tokens = tokenize(normalized);
+  if (!hasRequestMarker(tokens)) {
+    return null;
+  }
+
   const intent = findIntent(normalized);
   if (!intent) {
     return null;
@@ -231,6 +254,10 @@ export function parseNaturalLanguageRequest(text: string): ParsedNaturalLanguage
     categorySlugs: intent.categorySlugs,
     humanLabel: intent.humanLabel
   };
+}
+
+function hasRequestMarker(tokens: string[]): boolean {
+  return tokens.some((token) => REQUEST_MARKER_WORDS.has(token));
 }
 
 function findIntent(normalizedText: string): IntentRule | null {

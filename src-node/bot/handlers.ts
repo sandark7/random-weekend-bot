@@ -209,7 +209,6 @@ export function registerBotHandlers(
       ...lastLocation,
       lastAction: null,
       lastSuggestedPlace: null,
-      pendingRouteStart: null,
       lastRoute: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
@@ -257,10 +256,8 @@ export function registerBotHandlers(
       return;
     }
 
-
     lastLocations.set(chatId, {
       ...lastLocation,
-      pendingRouteStart: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
       updatedAt: Date.now()
@@ -354,7 +351,6 @@ export function registerBotHandlers(
       analytics,
       lastLocation,
       durationHours,
-      undefined,
       [],
       "new"
     );
@@ -395,10 +391,11 @@ export function registerBotHandlers(
 
   bot.on("message:text", async (ctx) => {
     const chatId = ctx.chat?.id;
-    const pending = chatId ? pendingConfirmations.get(chatId) : undefined;
+    let pending = chatId ? pendingConfirmations.get(chatId) : undefined;
     const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
     if (pending && Date.now() - pending.createdAt > 10 * 60 * 1000) {
       pendingConfirmations.delete(chatId);
+      pending = undefined;
     }
 
     if (ctx.message.text.startsWith("/")) {
@@ -506,7 +503,6 @@ export function registerBotHandlers(
         analytics,
         routeLocation,
         lastLocation.lastRoute.durationHours,
-        lastLocation.lastRoute.routeStart,
         [lastLocation.pendingRouteReplacementExcludePlaceId],
         "rebuild_without_place"
       );
@@ -577,7 +573,6 @@ export function registerBotHandlers(
             recentPlaceIds: [],
             lastAction: null,
             lastSuggestedPlace: null,
-            pendingRouteStart: null,
             lastRoute: null,
             pendingRouteReplacement: false,
             pendingRouteReplacementExcludePlaceId: null,
@@ -768,7 +763,6 @@ if (naturalLanguageRequest) {
       recentPlaceIds: [],
       lastAction: null,
       lastSuggestedPlace: null,
-      pendingRouteStart: null,
       lastRoute: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
@@ -843,13 +837,11 @@ if (naturalLanguageRequest) {
       {
         userId: ctx.from?.id,
         chatId: ctx.chat?.id,
-        query: resolvedLocation.query,
         status: resolvedLocation.status,
         confidence: resolvedLocation.confidence,
         kind: resolvedLocation.kind,
-        label: resolvedLocation.label,
-        lat: resolvedLocation.lat,
-        lon: resolvedLocation.lon
+        latRounded: roundCoord(resolvedLocation.lat),
+        lonRounded: roundCoord(resolvedLocation.lon)
       },
       "location_resolved"
     );
@@ -923,7 +915,6 @@ async function rememberLocationAndAskScenario(
       recentPlaceIds: [],
       lastAction: null,
       lastSuggestedPlace: null,
-      pendingRouteStart: null,
       lastRoute: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
@@ -1025,7 +1016,6 @@ async function repeatLastAction(
       analytics,
       lastLocation,
       action.durationHours,
-      action.routeStart,
       options.rebuildCurrentRouteOnly
         ? lastLocation.lastRoute?.steps.map((step) => step.placeId) ?? []
         : [],
@@ -1054,12 +1044,11 @@ async function sendRoute(
   analytics: Analytics,
   lastLocation: LastLocation,
   durationHours: RouteDurationHours,
-  routeStart?: RouteStart,
   extraExcludePlaceIds: number[] = [],
   routeMode: RouteMode = "new",
   preserveCurrentRouteOnFailure = false
 ): Promise<void> {
-  const start = routeStart ?? {
+  const start: RouteStart = {
     lat: lastLocation.lat,
     lon: lastLocation.lon,
     label: lastLocation.label
@@ -1111,7 +1100,6 @@ async function sendRoute(
         ...lastLocation,
         lastAction: null,
         lastSuggestedPlace: null,
-        pendingRouteStart: null,
         lastRoute: null,
         pendingRouteReplacement: false,
         pendingRouteReplacementExcludePlaceId: null,
@@ -1144,10 +1132,9 @@ async function sendRoute(
     lastLocations.set(ctx.chat.id, {
       ...lastLocation,
       recentPlaceIds: lastLocation.recentPlaceIds,
-      lastAction: { type: "route", durationHours, routeStart },
+      lastAction: { type: "route", durationHours },
       lastSuggestedPlace: null,
-      pendingRouteStart: null,
-      lastRoute: toStoredRoute(route, durationHours, start, startedAt, routeStart),
+      lastRoute: toStoredRoute(route, durationHours, start, startedAt),
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
       pendingFeedbackTarget: null,
@@ -1209,7 +1196,6 @@ async function sendNearbySuggestion(
         ...lastLocation,
         lastAction: options.action ?? null,
         lastSuggestedPlace: null,
-        pendingRouteStart: null,
         lastRoute: null,
         pendingRouteReplacement: false,
         pendingRouteReplacementExcludePlaceId: null,
@@ -1257,7 +1243,6 @@ async function sendNearbySuggestion(
         lon: result.suggestion.lon,
         label: result.suggestion.name
       },
-      pendingRouteStart: null,
       lastRoute: null,
       pendingRouteReplacement: false,
       pendingRouteReplacementExcludePlaceId: null,
@@ -1351,19 +1336,16 @@ async function replaceRouteStepAndReply(
     result.route,
     storedRoute.durationHours,
     storedRoute.start,
-    new Date(storedRoute.startedAtIso),
-    storedRoute.routeStart
+    new Date(storedRoute.startedAtIso)
   );
   lastLocations.set(chatId, {
     ...lastLocation,
-    recentPlaceIds: appendRecentPlaceId(lastLocation.recentPlaceIds, result.newStep.suggestion.placeId),
+    recentPlaceIds: lastLocation.recentPlaceIds,
     lastAction: {
       type: "route",
-      durationHours: storedRoute.durationHours,
-      routeStart: storedRoute.routeStart
+      durationHours: storedRoute.durationHours
     },
     lastSuggestedPlace: null,
-    pendingRouteStart: null,
     lastRoute: updatedRoute,
     pendingRouteReplacement: false,
     pendingRouteReplacementExcludePlaceId: null,
@@ -1395,12 +1377,10 @@ function toStoredRoute(
   route: RouteStep[],
   durationHours: RouteDurationHours,
   start: RouteStart,
-  startedAt: Date,
-  routeStart?: RouteStart
+  startedAt: Date
 ): StoredRoute {
   return {
     durationHours,
-    routeStart,
     start,
     startedAtIso: startedAt.toISOString(),
     steps: route.map((step) => ({

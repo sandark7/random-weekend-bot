@@ -38,6 +38,7 @@ type HarnessOptions = {
   resolverResult?: ResolvedLocation;
   resolverThrows?: boolean;
   emptyCategorySlugs?: readonly string[];
+  fixedCategoryPlaceIds?: Partial<Record<string, number>>;
   noRoute?: boolean;
   noReplacement?: boolean;
   chatCooldownMs?: number;
@@ -149,6 +150,40 @@ describe("bot conversation flow", () => {
     });
   });
 
+  it("does not apply an expired location confirmation in the same update", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const { bot, replies, locationResolver } = createHarness();
+
+    locationResolver.resolve
+      .mockResolvedValueOnce({
+        status: "needs_confirmation",
+        confidence: "medium",
+        kind: "exact_address",
+        query: "Тверская 7",
+        label: "Москва, Тверская улица, 7",
+        lat: 55.758,
+        lon: 37.612
+      })
+      .mockResolvedValueOnce({
+        status: "failed",
+        confidence: "low",
+        kind: "unknown",
+        reason: "not_found"
+      });
+
+    await sendText(bot, "Тверская 7");
+
+    vi.setSystemTime(new Date("2026-05-24T09:10:01Z"));
+    await sendText(bot, CONFIRM_LOCATION_BUTTON_TEXT);
+
+    expect(locationResolver.resolve).toHaveBeenLastCalledWith(CONFIRM_LOCATION_BUTTON_TEXT);
+    expect(replies.at(-1)?.text).toContain("Не смог точно понять адрес");
+    expect(replies.at(-1)?.text).not.toContain("Ищу рядом с: Москва, Тверская улица, 7");
+
+    vi.useRealTimers();
+  });
+
 
   it("keeps natural-language intent after location confirmation", async () => {
     const { bot, replies, nearbyCalls, locationResolver } = createHarness({
@@ -173,6 +208,28 @@ describe("bot conversation flow", () => {
     expect(replies.at(-2)?.text).toContain("Понял: ищу музеи и искусство рядом с: Метро «Китай-город».");
     expect(replies.at(-1)?.text).toContain("Ищу музеи и искусство рядом с: Метро «Китай-город»");
     expect(nearbyCalls.map((call) => call.categorySlug)).toContain("culture");
+  });
+
+  it.each([
+    "Парк Горького",
+    "бар Стрелка",
+    "Кофемания на Павелецкой"
+  ])("passes bare place text to the location resolver: %s", async (messageText) => {
+    const { bot, locationResolver, replies, repo } = createHarness();
+
+    await sendText(bot, messageText);
+
+    expect(locationResolver.resolve).toHaveBeenCalledWith(messageText);
+    expect(repo.findNearby).not.toHaveBeenCalled();
+    expect(replies.at(-1)?.text).toContain("Ищу рядом с:");
+    expect(replies.at(-1)?.replyMarkup).toMatchObject({
+      keyboard: [
+        [{ text: DESIRE_BUTTONS[0] }, { text: DESIRE_BUTTONS[1] }],
+        [{ text: DESIRE_BUTTONS[2] }, { text: DESIRE_BUTTONS[3] }],
+        [{ text: DESIRE_BUTTONS[4] }, { text: DESIRE_BUTTONS[5] }],
+        [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
+      ]
+    });
   });
 
   it("does not show scenarios when a text location cannot be resolved", async () => {
@@ -222,7 +279,7 @@ describe("bot conversation flow", () => {
   });
 
   it("shows the scenario menu after resolving a text location", async () => {
-    const { bot, replies } = createHarness();
+    const { bot, replies, logger } = createHarness();
 
     await sendText(bot, "Дубининская 59");
 
@@ -235,6 +292,18 @@ describe("bot conversation flow", () => {
         [{ text: RANDOM_BUTTON_TEXT }, { text: ROUTE_BUTTON_TEXT }]
       ]
     });
+    const locationLogCall = vi.mocked(logger.info).mock.calls.find((call) => call[1] === "location_resolved");
+    expect(locationLogCall?.[0]).toMatchObject({
+      status: "ok",
+      confidence: "good",
+      kind: "exact_address",
+      latRounded: 55.73,
+      lonRounded: 37.64
+    });
+    expect(locationLogCall?.[0]).not.toHaveProperty("query");
+    expect(locationLogCall?.[0]).not.toHaveProperty("label");
+    expect(locationLogCall?.[0]).not.toHaveProperty("lat");
+    expect(locationLogCall?.[0]).not.toHaveProperty("lon");
   });
 
   it("uses human scenario copy and switches to place-result buttons", async () => {
@@ -601,6 +670,45 @@ describe("bot conversation flow", () => {
     vi.useRealTimers();
   });
 
+  it("does not add route replacement places to nearby recent history", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
+    const replacementPlaceId = 1000 + routePlaceOffset("restaurant");
+    const allRandomExceptRestaurant = [
+      "fine_dining",
+      "coffee",
+      "breakfast",
+      "quick_bite",
+      "bar",
+      "cocktail_bar",
+      "wine_bar",
+      "pub",
+      "culture",
+      "landmark",
+      "viewpoint",
+      "park",
+      "activity"
+    ];
+    const { bot, replies } = createHarness({
+      emptyCategorySlugs: allRandomExceptRestaurant,
+      fixedCategoryPlaceIds: {
+        restaurant: replacementPlaceId
+      }
+    });
+
+    await sendText(bot, "Дубининская 59");
+    await sendText(bot, ROUTE_BUTTON_TEXT);
+    await sendText(bot, "3 часа");
+    await sendText(bot, REPLACE_ROUTE_STEP_BUTTON_TEXT);
+    await sendText(bot, "3. restaurant рядом");
+    await sendText(bot, RANDOM_BUTTON_TEXT);
+
+    expect(replies.at(-1)?.text).toContain("restaurant рядом");
+    expect(replies.at(-1)?.text).not.toContain("Все открытые места рядом уже показал");
+
+    vi.useRealTimers();
+  });
+
   it("offers fallback actions when a selected route step cannot be replaced", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-24T09:00:00Z"));
@@ -724,6 +832,19 @@ function createHarness(options: HarnessOptions = {}) {
       const categorySlug = query.categorySlug ?? "restaurant";
       if (options.emptyCategorySlugs?.includes(categorySlug)) {
         return [];
+      }
+      const fixedPlaceId = options.fixedCategoryPlaceIds?.[categorySlug];
+      if (fixedPlaceId !== undefined) {
+        return [
+          makeSuggestion({
+            placeId: fixedPlaceId,
+            name: `${categorySlug} рядом`,
+            slug: categorySlug,
+            lat: query.lat + 0.001,
+            lon: query.lon + 0.001,
+            distanceMeters: 120
+          })
+        ];
       }
       if (categorySlug === "bar") {
         return [

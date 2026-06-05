@@ -52,19 +52,7 @@ export function createAnalytics(options: {
   config: Pick<AppConfig, "ANALYTICS_ENABLED" | "ANALYTICS_SALT" | "APP_VERSION">;
   logger: AppLogger;
 }): Analytics {
-  const insert = options.db.prepare(`
-    INSERT INTO analytics_events (
-      created_at,
-      event_name,
-      user_id_hash,
-      chat_id_hash,
-      session_id,
-      flow_id,
-      app_version,
-      payload_json
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  let insert: Database.Statement | null = null;
   let warnedAboutMissingSalt = false;
 
   return {
@@ -82,7 +70,7 @@ export function createAnalytics(options: {
         const userIdHash = hashId(ctx?.from?.id, options.config.ANALYTICS_SALT);
         const chatIdHash = hashId(ctx?.chat?.id, options.config.ANALYTICS_SALT);
 
-        insert.run(
+        getInsertStatement().run(
           new Date().toISOString(),
           eventName,
           userIdHash,
@@ -100,6 +88,23 @@ export function createAnalytics(options: {
       }
     }
   };
+
+  function getInsertStatement(): Database.Statement {
+    insert ??= options.db.prepare(`
+      INSERT INTO analytics_events (
+        created_at,
+        event_name,
+        user_id_hash,
+        chat_id_hash,
+        session_id,
+        flow_id,
+        app_version,
+        payload_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    return insert;
+  }
 }
 
 export function hashId(value: number | undefined, salt: string | undefined): string | null {

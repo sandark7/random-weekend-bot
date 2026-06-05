@@ -27,8 +27,6 @@ export type RouteStart = {
   lat: number;
   lon: number;
   label: string;
-  scenarioKey?: PlaceScenarioKey;
-  suggestion?: PlaceSuggestion;
 };
 
 export type LastAction =
@@ -39,7 +37,7 @@ export type LastAction =
       humanLabel?: string;
     }
   | { type: "random" }
-  | { type: "route"; durationHours: RouteDurationHours; routeStart?: RouteStart };
+  | { type: "route"; durationHours: RouteDurationHours };
 
 export type LastResultKind = "place" | "route" | null;
 
@@ -52,7 +50,6 @@ export type StoredRouteStep = {
 
 export type StoredRoute = {
   durationHours: RouteDurationHours;
-  routeStart?: RouteStart;
   start: RouteStart;
   startedAtIso: string;
   steps: StoredRouteStep[];
@@ -70,7 +67,6 @@ export type LastLocation = {
   recentPlaceIds: number[];
   lastAction: LastAction | null;
   lastSuggestedPlace: RouteStart | null;
-  pendingRouteStart: RouteStart | null;
   lastRoute: StoredRoute | null;
   pendingRouteReplacement: boolean;
   pendingRouteReplacementExcludePlaceId: number | null;
@@ -83,8 +79,4 @@ export function appendRecentPlaceId(recentPlaceIds: number[], placeId: number): 
   return [...recentPlaceIds.filter((recentPlaceId) => recentPlaceId !== placeId), placeId].slice(
     -RECENT_PLACE_HISTORY_LIMIT
   );
-}
-
-export function appendRecentPlaceIds(recentPlaceIds: number[], placeIds: number[]): number[] {
-  return placeIds.reduce((recent, placeId) => appendRecentPlaceId(recent, placeId), recentPlaceIds);
 }

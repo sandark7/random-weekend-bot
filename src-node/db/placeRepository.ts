@@ -95,10 +95,15 @@ export class PlaceRepository {
           AND p.latitude BETWEEN @minLat AND @maxLat
           AND p.longitude BETWEEN @minLon AND @maxLon
           ${categoryClause}
+        ORDER BY
+          ((p.latitude - @originLat) * (p.latitude - @originLat)) +
+          ((p.longitude - @originLon) * (p.longitude - @originLon)) ASC
         LIMIT @limit
         `
       )
       .all({
+        originLat: options.lat,
+        originLon: options.lon,
         minLat: box.minLat,
         maxLat: box.maxLat,
         minLon: box.minLon,
