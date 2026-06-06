@@ -16,12 +16,22 @@ type CliOptions = {
   report?: string;
 };
 
-const MOSCOW_BBOX = {
-  minLat: 55.45,
-  maxLat: 56.05,
-  minLon: 37.15,
-  maxLon: 38.1
-};
+const SUPPORTED_CITY_BBOXES = [
+  {
+    city: "moscow",
+    minLat: 55.45,
+    maxLat: 56.05,
+    minLon: 37.15,
+    maxLon: 38.1
+  },
+  {
+    city: "krasnodar",
+    minLat: 44.85,
+    maxLat: 45.2,
+    minLon: 38.75,
+    maxLon: 39.25
+  }
+];
 
 const VALIDATION_HEADERS = ["check", "status", "count", "details"];
 
@@ -105,11 +115,11 @@ function validate(categories: CsvRow[], places: CsvRow[], placeCategories: CsvRo
   );
   add(
     report,
-    "coords_inside_moscow_bbox_when_present",
+    "coords_inside_supported_city_bbox_when_present",
     places.every((row) => {
       const lat = parseNullableNumber(row.latitude);
       const lon = parseNullableNumber(row.longitude);
-      return lat === null || lon === null || (lat >= MOSCOW_BBOX.minLat && lat <= MOSCOW_BBOX.maxLat && lon >= MOSCOW_BBOX.minLon && lon <= MOSCOW_BBOX.maxLon);
+      return lat === null || lon === null || isInsideSupportedCityBbox(lat, lon);
     }),
     places.length,
     ""
@@ -212,6 +222,15 @@ function parseNullableNumber(value: string | undefined): number | null {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isInsideSupportedCityBbox(lat: number, lon: number): boolean {
+  return SUPPORTED_CITY_BBOXES.some((bbox) => (
+    lat >= bbox.minLat &&
+    lat <= bbox.maxLat &&
+    lon >= bbox.minLon &&
+    lon <= bbox.maxLon
+  ));
 }
 
 function uniqueCount(values: string[]): number {
