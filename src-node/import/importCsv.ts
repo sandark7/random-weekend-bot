@@ -8,6 +8,12 @@ import { ensureRuntimeDirectories, loadConfig, type AppConfig } from "../config.
 import { openDatabase } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import { categories, placeCategories, places } from "../db/schema.js";
+import {
+  findSupportedCityByCoordinates,
+  findSupportedCityById,
+  isInsideBoundingBox,
+  type SupportedCityId
+} from "../geo/supportedCities.js";
 import { createLogger } from "../logger.js";
 import {
   categoryCsvRowSchema,
@@ -148,6 +154,13 @@ function validateImportGraph(
         `Place must have exactly one primary category in place_categories.csv: ${row.external_id}`
       );
     }
+
+    if (row.city_slug && row.latitude !== null && row.longitude !== null) {
+      const city = findSupportedCityById(row.city_slug);
+      if (!city || !isInsideBoundingBox(row.latitude, row.longitude, city.bbox)) {
+        throw new Error(`Place city_slug does not match coordinates in places.csv: ${row.external_id}`);
+      }
+    }
   }
 }
 
@@ -181,6 +194,7 @@ function upsertCategories(db: ReturnType<typeof openDatabase>["db"], rows: Categ
 function upsertPlaces(db: ReturnType<typeof openDatabase>["db"], rows: PlaceCsvRow[]): void {
   for (const row of rows) {
     const openingHoursJson = parseOpeningHoursCell(row.opening_hours_json);
+    const citySlug = resolvePlaceCitySlug(row);
 
     db.insert(places)
       .values({
@@ -190,6 +204,7 @@ function upsertPlaces(db: ReturnType<typeof openDatabase>["db"], rows: PlaceCsvR
         address: row.address,
         latitude: row.latitude,
         longitude: row.longitude,
+        citySlug,
         openingHoursText: row.opening_hours_text,
         openingHoursJson,
         source: row.source,
@@ -205,6 +220,7 @@ function upsertPlaces(db: ReturnType<typeof openDatabase>["db"], rows: PlaceCsvR
           address: row.address,
           latitude: row.latitude,
           longitude: row.longitude,
+          citySlug,
           openingHoursText: row.opening_hours_text,
           openingHoursJson,
           source: row.source,
@@ -215,6 +231,14 @@ function upsertPlaces(db: ReturnType<typeof openDatabase>["db"], rows: PlaceCsvR
       })
       .run();
   }
+}
+
+function resolvePlaceCitySlug(row: PlaceCsvRow): SupportedCityId | null {
+  if (row.city_slug) {
+    return row.city_slug;
+  }
+
+  return findSupportedCityByCoordinates(row.latitude, row.longitude)?.id ?? null;
 }
 
 function upsertPlaceCategories(db: ReturnType<typeof openDatabase>["db"], rows: PlaceCategoryCsvRow[]): void {

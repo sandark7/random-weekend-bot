@@ -63,6 +63,72 @@ describe("LocationResolver", () => {
     });
   });
 
+  it("resolves an explicit Krasnodar exact address without Moscow bias", async () => {
+    const geocoder = new FakeGeocoder([
+      candidate({
+        displayName: "50, Красная улица, Краснодар, Краснодарский край, Россия",
+        lat: 45.0353,
+        lon: 38.9752,
+        address: {
+          city: "Краснодар",
+          road: "Красная улица",
+          house_number: "50"
+        }
+      })
+    ]);
+    const result = await makeResolver(geocoder).resolve("Краснодар, Красная 50");
+
+    expect(geocoder.requests[0]).toMatchObject({
+      query: "Краснодар, Красная улица, 50",
+      options: {
+        cityBias: "Краснодар",
+        viewbox: "38.75,45.20,39.25,44.85",
+        bounded: true,
+        limit: 8
+      }
+    });
+    expect(geocoder.requests.map((request) => request.query).join("\n")).not.toContain("Москва");
+    expect(result).toMatchObject({
+      status: "ok",
+      confidence: "good",
+      label: "Краснодар, Красная улица, 50",
+      lat: 45.0353,
+      lon: 38.9752,
+      citySlug: "krasnodar"
+    });
+  });
+
+  it("can fall back from Moscow to Krasnodar for a bare supported-city address", async () => {
+    const geocoder = new FakeGeocoder({
+      "Краснодар, Красная улица, 50": [
+        candidate({
+          displayName: "50, Красная улица, Краснодар, Краснодарский край, Россия",
+          lat: 45.0353,
+          lon: 38.9752,
+          address: {
+            city: "Краснодар",
+            road: "Красная улица",
+            house_number: "50"
+          }
+        })
+      ]
+    });
+    const result = await makeResolver(geocoder).resolve("Красная 50");
+
+    expect(geocoder.requests.some((request) => request.query === "Москва, Красная улица, 50")).toBe(true);
+    expect(geocoder.requests.some((request) => request.query === "Краснодар, Красная улица, 50")).toBe(true);
+    expect(geocoder.requests.slice(0, 2).map((request) => request.query)).toEqual([
+      "Москва, Красная улица, 50",
+      "Краснодар, Красная улица, 50"
+    ]);
+    expect(result).toMatchObject({
+      status: "ok",
+      confidence: "good",
+      label: "Краснодар, Красная улица, 50",
+      citySlug: "krasnodar"
+    });
+  });
+
   it("fails exact addresses when only a different house is found", async () => {
     const geocoder = new FakeGeocoder([
       candidate({
@@ -150,7 +216,40 @@ describe("LocationResolver", () => {
 
     expect(result).toMatchObject({
       status: "needs_confirmation",
-      label: "Some POI"
+      label: "Москва, Some POI",
+      citySlug: "moscow"
+    });
+  });
+
+  it("uses detected city context for loose Krasnodar locations", async () => {
+    const geocoder = new FakeGeocoder([
+      candidate({
+        displayName: "Парк Краснодар, Краснодар, Краснодарский край, Россия",
+        name: "Парк Краснодар",
+        lat: 45.0421,
+        lon: 39.0321,
+        address: {
+          city: "Краснодар",
+          leisure: "Парк Краснодар"
+        }
+      })
+    ]);
+    const result = await makeResolver(geocoder).resolve("Краснодар парк Галицкого");
+
+    expect(geocoder.requests[0]).toMatchObject({
+      query: "Краснодар, парк Галицкого",
+      options: {
+        cityBias: "Краснодар",
+        viewbox: "38.75,45.20,39.25,44.85",
+        bounded: true,
+        limit: 3
+      }
+    });
+    expect(result).toMatchObject({
+      status: "needs_confirmation",
+      confidence: "medium",
+      label: "Парк Краснодар",
+      citySlug: "krasnodar"
     });
   });
 });
@@ -158,7 +257,7 @@ describe("LocationResolver", () => {
 class FakeGeocoder implements Geocoder {
   readonly requests: Array<{ query: string; options?: GeocodeSearchOptions }> = [];
 
-  constructor(private readonly results: GeocodedAddress[]) {}
+  constructor(private readonly results: GeocodedAddress[] | Record<string, GeocodedAddress[]>) {}
 
   async geocode(query: string): Promise<GeocodedAddress | null> {
     return (await this.search(query, { limit: 1 }))[0] ?? null;
@@ -166,7 +265,11 @@ class FakeGeocoder implements Geocoder {
 
   async search(query: string, options?: GeocodeSearchOptions): Promise<GeocodedAddress[]> {
     this.requests.push({ query, options });
-    return this.results;
+    if (Array.isArray(this.results)) {
+      return this.results;
+    }
+
+    return this.results[query] ?? [];
   }
 }
 

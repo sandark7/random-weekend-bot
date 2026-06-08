@@ -121,6 +121,7 @@ function makeSuggestion(overrides: Partial<PlaceSuggestion> = {}): PlaceSuggesti
     address: "Покровка, 17",
     lat: 55.7605,
     lon: 37.6465,
+    citySlug: "moscow",
     distanceMeters: 420,
     openingHoursText: "Пн-Вс 10:00-22:00",
     openingHoursJson: {

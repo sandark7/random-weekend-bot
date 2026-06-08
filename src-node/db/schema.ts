@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { SupportedCityId } from "../geo/supportedCities.js";
 import type { OpeningHoursJson } from "../shared/types.js";
 
 export const categories = sqliteTable("categories", {
@@ -18,6 +19,7 @@ export const places = sqliteTable(
     address: text("address"),
     latitude: real("latitude"),
     longitude: real("longitude"),
+    citySlug: text("city_slug").$type<SupportedCityId | null>(),
     openingHoursText: text("opening_hours_text"),
     openingHoursJson: text("opening_hours_json", { mode: "json" }).$type<OpeningHoursJson | null>(),
     source: text("source"),
@@ -28,6 +30,7 @@ export const places = sqliteTable(
   },
   (table) => ({
     latLonIdx: index("idx_places_lat_lon").on(table.latitude, table.longitude),
+    citySlugIdx: index("idx_places_city_slug").on(table.citySlug),
     activeIdx: index("idx_places_active").on(table.isActive)
   })
 );

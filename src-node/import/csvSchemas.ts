@@ -6,6 +6,10 @@ const nonEmptyString = z.string().trim().min(1);
 const slugString = z.string().trim().min(1).regex(/^[a-z0-9_:-]+$/);
 const nullableText = z.preprocess((value) => emptyToNull(value), z.string().trim().min(1).nullable());
 const nullableUrl = z.preprocess((value) => emptyToNull(value), z.string().url().nullable());
+const nullableCitySlug = z.preprocess(
+  (value) => emptyToNull(value),
+  z.enum(["moscow", "krasnodar"]).nullable()
+);
 const nullableNumber = z.preprocess((value) => {
   const normalized = emptyToNull(value);
   return normalized === null ? null : Number(normalized);
@@ -37,6 +41,7 @@ export const placeCsvRowSchema = z
     address: nullableText,
     latitude: nullableNumber.pipe(z.number().min(-90).max(90).nullable()),
     longitude: nullableNumber.pipe(z.number().min(-180).max(180).nullable()),
+    city_slug: nullableCitySlug.optional().default(null),
     opening_hours_text: nullableText,
     opening_hours_json: nullableText,
     source: nullableText,

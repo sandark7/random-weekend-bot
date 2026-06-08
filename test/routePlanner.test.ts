@@ -461,6 +461,7 @@ function makeSuggestion(options: {
     address: "Адрес",
     lat: options.lat,
     lon: options.lon,
+    citySlug: "moscow",
     distanceMeters: options.distanceMeters ?? 100,
     openingHoursText: "Ежедневно 00:00-23:59",
     openingHoursJson: options.openingHoursJson ?? {

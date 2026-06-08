@@ -1,4 +1,5 @@
 import type { ResolvedLocation } from "../geo/locationResolver.js";
+import type { SupportedCityId } from "../geo/supportedCities.js";
 import type { PlaceScenarioKey, RouteDurationHours } from "../recommendation/scenarios.js";
 import type { PlaceSuggestion } from "../shared/types.js";
 
@@ -18,6 +19,7 @@ export type PendingConfirmation = {
   lat: number;
   lon: number;
   query: string;
+  citySlug: SupportedCityId;
   createdAt: number;
   intent?: PendingConfirmationIntent;
 };
@@ -26,6 +28,7 @@ export type RouteStart = {
   placeId?: number;
   lat: number;
   lon: number;
+  citySlug?: SupportedCityId | null;
   label: string;
 };
 
@@ -56,12 +59,13 @@ export type StoredRoute = {
 };
 
 export type PendingFeedbackTarget =
-  | { type: "place"; placeId: number; scenario?: PlaceScenarioKey }
-  | { type: "route"; durationHours: RouteDurationHours; placeIds: number[] };
+  | { type: "place"; placeId: number; scenario?: PlaceScenarioKey; citySlug: SupportedCityId | null }
+  | { type: "route"; durationHours: RouteDurationHours; placeIds: number[]; citySlug: SupportedCityId | null };
 
 export type LastLocation = {
   lat: number;
   lon: number;
+  citySlug: SupportedCityId | null;
   label: string;
   radiusMeters: number;
   recentPlaceIds: number[];

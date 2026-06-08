@@ -42,7 +42,8 @@ describe("analytics", () => {
       locationLabel: "Москва, Тверская улица, 7",
       latRounded: roundCoord(55.758123),
       lonRounded: roundCoord(37.612987),
-      kind: "exact_address"
+      kind: "exact_address",
+      citySlug: "moscow"
     });
 
     const row = db.prepare("SELECT * FROM analytics_events").get() as {
@@ -61,7 +62,8 @@ describe("analytics", () => {
     expect(payload).toEqual({
       latRounded: 55.76,
       lonRounded: 37.61,
-      kind: "exact_address"
+      kind: "exact_address",
+      citySlug: "moscow"
     });
     expect(JSON.stringify(payload)).not.toContain("Тверская");
   });

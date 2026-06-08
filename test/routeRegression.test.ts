@@ -348,6 +348,7 @@ function place(options: {
     address: "Regression address",
     lat: options.lat,
     lon: options.lon,
+    citySlug: options.lat < 50 ? "krasnodar" : "moscow",
     distanceMeters: options.distanceMeters ?? Math.round(haversineDistanceMeters(start, {
       lat: options.lat,
       lon: options.lon

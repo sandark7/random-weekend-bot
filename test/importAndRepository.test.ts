@@ -40,6 +40,7 @@ describe("CSV import and repository", () => {
       });
 
       expect(suggestions[0]?.name).toBe("Probka");
+      expect(suggestions[0]?.citySlug).toBe("moscow");
       expect(suggestions[0]?.categories[0]).toMatchObject({ slug: "restaurant", isPrimary: true });
       expect(suggestions[0]?.distanceMeters).toBe(0);
     } finally {
@@ -58,13 +59,20 @@ describe("CSV import and repository", () => {
     try {
       const row = handle.sqlite
         .prepare(
-          "SELECT address, latitude, longitude, opening_hours_json AS openingHoursJson FROM places WHERE external_id = 'greatlist-msk-restaurant-pushkin'"
+          "SELECT address, latitude, longitude, city_slug AS citySlug, opening_hours_json AS openingHoursJson FROM places WHERE external_id = 'greatlist-msk-restaurant-pushkin'"
         )
-        .get() as { address: string; latitude: number; longitude: number; openingHoursJson: string } | undefined;
+        .get() as {
+          address: string;
+          latitude: number;
+          longitude: number;
+          citySlug: string;
+          openingHoursJson: string;
+        } | undefined;
 
       expect(row?.address).toBe("Тверской бульвар, 26А");
       expect(row?.latitude).toBe(55.76370899997232);
       expect(row?.longitude).toBe(37.60489706922942);
+      expect(row?.citySlug).toBe("moscow");
       expect(JSON.parse(row?.openingHoursJson ?? "{}").weekly.mon).toEqual([
         { from: "09:00", to: "00:00", next_day: true }
       ]);
@@ -112,6 +120,23 @@ describe("CSV import and repository", () => {
         is_active: "true"
       })
     ).not.toThrow();
+  });
+
+  it("accepts optional city_slug in places CSV", () => {
+    expect(placeCsvRowSchema.parse({
+      external_id: "krd-test",
+      display_name: "Краснодарское место",
+      description: "",
+      address: "Красная, 50",
+      latitude: "45.035",
+      longitude: "38.975",
+      city_slug: "krasnodar",
+      opening_hours_text: "Круглосуточно",
+      opening_hours_json: JSON.stringify(allDayOpeningHours()),
+      source: "test",
+      source_url: "",
+      is_active: "true"
+    }).city_slug).toBe("krasnodar");
   });
 
   it("allows source-only place rows before enrichment", () => {

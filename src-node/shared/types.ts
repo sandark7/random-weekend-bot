@@ -1,3 +1,5 @@
+import type { SupportedCityId } from "../geo/supportedCities.js";
+
 export type CategorySlug = string;
 
 export type OpeningHoursInterval = {
@@ -25,6 +27,7 @@ export type PlaceSuggestion = {
   address: string | null;
   lat: number;
   lon: number;
+  citySlug: SupportedCityId | null;
   distanceMeters: number;
   openingHoursText: string | null;
   openingHoursJson: OpeningHoursJson | null;

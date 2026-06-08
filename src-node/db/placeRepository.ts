@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { AppConfig } from "../config.js";
 import { boundingBox, haversineDistanceMeters } from "../geo/distance.js";
+import type { SupportedCityId } from "../geo/supportedCities.js";
 import { isOpenNow, parseOpeningHoursJson } from "../shared/openingHours.js";
 import type { CategorySlug, OpeningHoursJson, PlaceSuggestion } from "../shared/types.js";
 
@@ -12,6 +13,7 @@ type PlaceRow = {
   address: string | null;
   latitude: number;
   longitude: number;
+  citySlug: SupportedCityId | null;
   openingHoursText: string | null;
   openingHoursJson: string | OpeningHoursJson | null;
 };
@@ -72,6 +74,7 @@ export class PlaceRepository {
           p.address AS address,
           p.latitude AS latitude,
           p.longitude AS longitude,
+          p.city_slug AS citySlug,
           p.opening_hours_text AS openingHoursText,
           p.opening_hours_json AS openingHoursJson,
           (
@@ -150,6 +153,7 @@ export class PlaceRepository {
           p.address AS address,
           p.latitude AS latitude,
           p.longitude AS longitude,
+          p.city_slug AS citySlug,
           p.opening_hours_text AS openingHoursText,
           p.opening_hours_json AS openingHoursJson,
           (
@@ -200,6 +204,7 @@ export class PlaceRepository {
       address: row.address,
       lat: row.latitude,
       lon: row.longitude,
+      citySlug: row.citySlug,
       distanceMeters: Math.round(
         haversineDistanceMeters(
           { lat: originLat, lon: originLon },

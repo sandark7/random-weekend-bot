@@ -3,6 +3,7 @@ import { roundCoord, type Analytics } from "../analytics/analytics.js";
 import type { AppConfig } from "../config.js";
 import type { PlaceRepository } from "../db/placeRepository.js";
 import type { LocationResolver } from "../geo/locationResolver.js";
+import { findSupportedCityByCoordinates, type SupportedCityId } from "../geo/supportedCities.js";
 import type { AppLogger } from "../logger.js";
 import { findNearbySuggestion } from "../recommendation/nearby.js";
 import { parseNaturalLanguageRequest } from "./naturalLanguageRequest.js";
@@ -77,7 +78,7 @@ type RouteMode = "new" | "rebuild" | "rebuild_without_place";
 
 const LOCATION_INPUT_HELP = [
   "Можно отправить геолокацию с телефона или написать адрес обычным сообщением:",
-  "Например, Пятницкая 59, Патриаршие пруды или метро Китай-город"
+  "Например, Пятницкая 59, Патриаршие пруды, метро Китай-город или Краснодар, Красная 50"
 ].join("\n");
 
 const SCENARIO_INTRO: Record<PlaceScenarioKey, (locationLabel: string) => string> = {
@@ -143,7 +144,7 @@ export function registerBotHandlers(
     }
     await ctx.reply(
       [
-        "Всем привет! С вами телеграм-бот Random Weekend и его создатель Андрей Смирнов. Помогу придумать за вас, куда пойти в Москве: выбрать место рядом или собрать прогулочный маршрут на несколько часов.",
+        "Всем привет! С вами телеграм-бот Random Weekend и его создатель Андрей Смирнов. Помогу придумать за вас, куда пойти в Москве или Краснодаре: выбрать место рядом или собрать прогулочный маршрут на несколько часов.",
         "",
         LOCATION_INPUT_HELP
       ].join("\n"),
@@ -235,7 +236,8 @@ export function registerBotHandlers(
     const scenario = PLACE_SCENARIOS[scenarioKey];
     analytics.track("scenario_selected", ctx, {
       scenario: scenarioKey,
-      categorySlugs: scenario.categories
+      categorySlugs: scenario.categories,
+      citySlug: lastLocation.citySlug
     });
     await sendNearbySuggestion(ctx, repo, lastLocations, analytics, {
       lat: lastLocation.lat,
@@ -279,6 +281,7 @@ export function registerBotHandlers(
 
     analytics.track("route_step_replace_started", ctx, {
       durationHours: lastLocation.lastRoute.durationHours,
+      routeCity: lastLocation.citySlug,
       routePlaceIds: lastLocation.lastRoute.steps.map((step) => step.placeId),
       routeSteps: lastLocation.lastRoute.steps.length
     });
@@ -342,7 +345,8 @@ export function registerBotHandlers(
     }
 
     analytics.track("route_duration_selected", ctx, {
-      durationHours
+      durationHours,
+      citySlug: lastLocation.citySlug
     });
     await sendRoute(
       ctx,
@@ -363,7 +367,7 @@ export function registerBotHandlers(
     await ctx.reply(
       [
         "Если вы в Telegram Desktop, кнопка геолокации может не открыть отправку локации.",
-        "Тогда просто напишите адрес текстом: улицу и дом, метро или понятное место в Москве.",
+        "Тогда просто напишите адрес текстом: улицу и дом, метро или понятное место в Москве или Краснодаре.",
         LOCATION_INPUT_HELP
       ].join("\n"),
       { reply_markup: mainKeyboardFor(ctx, lastLocations) }
@@ -377,6 +381,7 @@ export function registerBotHandlers(
     const { latitude, longitude } = ctx.message.location;
     analytics.track("location_submitted", ctx, {
       locationKind: "telegram_location",
+      citySlug: citySlugForCoordinates(latitude, longitude),
       latRounded: roundCoord(latitude),
       lonRounded: roundCoord(longitude),
       radiusMeters: config.SEARCH_RADIUS_METERS
@@ -494,6 +499,7 @@ export function registerBotHandlers(
       lastLocations.set(chatId, routeLocation);
       analytics.track("route_step_rebuild_without_place", ctx, {
         durationHours: lastLocation.lastRoute.durationHours,
+        routeCity: lastLocation.citySlug,
         excludedPlaceId: lastLocation.pendingRouteReplacementExcludePlaceId
       });
       await sendRoute(
@@ -552,7 +558,7 @@ export function registerBotHandlers(
         return;
       }
 
-      await ctx.reply("Ок, напишите адрес подробнее: улицу и дом, например «Тверская 7».", {
+      await ctx.reply("Ок, напишите адрес подробнее: улицу и дом, например «Тверская 7» или «Краснодар, Красная 50».", {
         reply_markup: mainKeyboardFor(ctx, lastLocations)
       });
       return;
@@ -568,6 +574,7 @@ export function registerBotHandlers(
           lastLocations.set(chatId, {
             lat: pending.lat,
             lon: pending.lon,
+            citySlug: pending.citySlug,
             label: pending.label,
             radiusMeters: config.SEARCH_RADIUS_METERS,
             recentPlaceIds: [],
@@ -604,6 +611,7 @@ export function registerBotHandlers(
       await rememberLocationAndAskScenario(ctx, lastLocations, {
         lat: pending.lat,
         lon: pending.lon,
+        citySlug: pending.citySlug,
         radiusMeters: config.SEARCH_RADIUS_METERS,
         locationLabel: pending.label
       });
@@ -617,6 +625,7 @@ export function registerBotHandlers(
       }
       analytics.track("location_submitted", ctx, {
         locationKind: "coordinates_text",
+        citySlug: citySlugForCoordinates(coordinates.lat, coordinates.lon),
         latRounded: roundCoord(coordinates.lat),
         lonRounded: roundCoord(coordinates.lon),
         radiusMeters: config.SEARCH_RADIUS_METERS
@@ -716,13 +725,14 @@ if (naturalLanguageRequest) {
     return;
   }
 
-  analytics.track("location_resolved", ctx, {
-    status: resolvedIntentLocation.status,
-    confidence: resolvedIntentLocation.confidence,
-    kind: resolvedIntentLocation.kind,
-    latRounded: roundCoord(resolvedIntentLocation.lat),
-    lonRounded: roundCoord(resolvedIntentLocation.lon),
-    locationKind: "text_address_with_intent"
+    analytics.track("location_resolved", ctx, {
+      status: resolvedIntentLocation.status,
+      confidence: resolvedIntentLocation.confidence,
+      kind: resolvedIntentLocation.kind,
+      citySlug: resolvedIntentLocation.citySlug,
+      latRounded: roundCoord(resolvedIntentLocation.lat),
+      lonRounded: roundCoord(resolvedIntentLocation.lon),
+      locationKind: "text_address_with_intent"
   });
 
   if (resolvedIntentLocation.status === "needs_confirmation") {
@@ -735,6 +745,7 @@ if (naturalLanguageRequest) {
         lat: resolvedIntentLocation.lat,
         lon: resolvedIntentLocation.lon,
         query: resolvedIntentLocation.query,
+        citySlug: resolvedIntentLocation.citySlug,
         createdAt: Date.now(),
         intent: {
           scenarioKey: naturalLanguageRequest.scenarioKey,
@@ -758,6 +769,7 @@ if (naturalLanguageRequest) {
     lastLocations.set(chatId, {
       lat: resolvedIntentLocation.lat,
       lon: resolvedIntentLocation.lon,
+      citySlug: resolvedIntentLocation.citySlug,
       label: resolvedIntentLocation.label,
       radiusMeters: config.SEARCH_RADIUS_METERS,
       recentPlaceIds: [],
@@ -827,7 +839,7 @@ if (naturalLanguageRequest) {
         reason: "geocoder_failed"
       });
       await ctx.reply(
-        "Не смог точно понять адрес. Напиши подробнее: улица и дом, например «Тверская 7», или отправь геолокацию с телефона.",
+        "Не смог точно понять адрес. Напиши подробнее: улица и дом, например «Тверская 7» или «Краснодар, Красная 50», или отправь геолокацию с телефона.",
         { reply_markup: mainKeyboardFor(ctx, lastLocations) }
       );
       return;
@@ -840,6 +852,7 @@ if (naturalLanguageRequest) {
         status: resolvedLocation.status,
         confidence: resolvedLocation.confidence,
         kind: resolvedLocation.kind,
+        citySlug: resolvedLocation.citySlug,
         latRounded: roundCoord(resolvedLocation.lat),
         lonRounded: roundCoord(resolvedLocation.lon)
       },
@@ -849,6 +862,7 @@ if (naturalLanguageRequest) {
       status: resolvedLocation.status,
       confidence: resolvedLocation.confidence,
       kind: resolvedLocation.kind,
+      citySlug: resolvedLocation.citySlug,
       latRounded: roundCoord(resolvedLocation.lat),
       lonRounded: roundCoord(resolvedLocation.lon)
     });
@@ -863,6 +877,7 @@ if (naturalLanguageRequest) {
           lat: resolvedLocation.lat,
           lon: resolvedLocation.lon,
           query: resolvedLocation.query,
+          citySlug: resolvedLocation.citySlug,
           createdAt: Date.now()
         });
       }
@@ -878,6 +893,7 @@ if (naturalLanguageRequest) {
     await rememberLocationAndAskScenario(ctx, lastLocations, {
       lat: resolvedLocation.lat,
       lon: resolvedLocation.lon,
+      citySlug: resolvedLocation.citySlug,
       radiusMeters: config.SEARCH_RADIUS_METERS,
       locationLabel: resolvedLocation.label
     });
@@ -902,14 +918,17 @@ async function rememberLocationAndAskScenario(
   options: {
     lat: number;
     lon: number;
+    citySlug?: SupportedCityId | null;
     radiusMeters: number;
     locationLabel: string;
   }
 ): Promise<void> {
+  const citySlug = options.citySlug ?? citySlugForCoordinates(options.lat, options.lon);
   if (ctx.chat?.id) {
     lastLocations.set(ctx.chat.id, {
       lat: options.lat,
       lon: options.lon,
+      citySlug,
       label: options.locationLabel,
       radiusMeters: options.radiusMeters,
       recentPlaceIds: [],
@@ -1051,6 +1070,7 @@ async function sendRoute(
   const start: RouteStart = {
     lat: lastLocation.lat,
     lon: lastLocation.lon,
+    citySlug: lastLocation.citySlug,
     label: lastLocation.label
   };
   const startedAt = new Date();
@@ -1081,6 +1101,7 @@ async function sendRoute(
     analytics.track(routeMode === "new" ? "route_failed" : "route_rebuild_failed", ctx, {
       durationHours,
       radiusMeters: lastLocation.radiusMeters,
+      routeCity: start.citySlug,
       failureReason: preserveCurrentRouteOnFailure
         ? "could_not_rebuild_sequence"
         : "not_enough_open_places",
@@ -1122,6 +1143,8 @@ async function sendRoute(
     routeDurationMinutes: routeDuration(route),
     routePlaceIds: route.map((step) => step.suggestion.placeId),
     primaryCategories: route.map((step) => primaryCategorySlug(step.suggestion)),
+    placeCities: route.map((step) => step.suggestion.citySlug),
+    routeCity: start.citySlug,
     totalWalkMinutes: route.reduce((sum, step) => sum + step.walkMinutes, 0),
     radiusMeters: lastLocation.radiusMeters,
     hadRouteNote: Boolean(routeNote),
@@ -1183,9 +1206,11 @@ async function sendNearbySuggestion(
 
   if (!result) {
     const fallbackRadiusMeters = Math.max(options.radiusMeters * 2, 2500);
+    const locationCity = lastLocation?.citySlug ?? citySlugForCoordinates(options.lat, options.lon);
     analytics.track("place_not_found", ctx, {
       scenario: getScenarioFromAction(options.action),
       categorySlugs: options.categorySlugs ?? null,
+      locationCity,
       radiusMeters: options.radiusMeters,
       fallbackRadiusMeters,
       failureReason: "no_open_places"
@@ -1215,11 +1240,13 @@ async function sendNearbySuggestion(
   analytics.track("place_suggested", ctx, {
     scenario: getScenarioFromAction(options.action),
     categorySlugs: options.categorySlugs ?? null,
+    locationCity: lastLocation?.citySlug ?? citySlugForCoordinates(options.lat, options.lon),
     radiusMeters: options.radiusMeters,
     resultRadiusMeters: result.radiusMeters,
     hadRadiusFallback: result.radiusMeters > options.radiusMeters,
     resetRecentPlaces: result.resetRecentPlaces,
     placeId: result.suggestion.placeId,
+    placeCity: result.suggestion.citySlug,
     primaryCategory: primaryCategorySlug(result.suggestion),
     distanceMeters: result.suggestion.distanceMeters,
     walkingMinutes: walkingMinutes(result.suggestion.distanceMeters)
@@ -1233,6 +1260,7 @@ async function sendNearbySuggestion(
     lastLocations.set(chatId, {
       lat: options.lat,
       lon: options.lon,
+      citySlug: lastLocation?.citySlug ?? citySlugForCoordinates(options.lat, options.lon),
       label: options.locationLabel,
       radiusMeters: options.radiusMeters,
       recentPlaceIds,
@@ -1305,6 +1333,7 @@ async function replaceRouteStepAndReply(
     analytics.track("route_step_replace_failed", ctx, {
       durationHours: storedRoute.durationHours,
       stepIndex,
+      routeCity: lastLocation.citySlug,
       oldPlaceId: oldStoredStep?.placeId,
       failureReason: "no_valid_replacement"
     });
@@ -1326,6 +1355,7 @@ async function replaceRouteStepAndReply(
   analytics.track("route_step_replaced", ctx, {
     durationHours: storedRoute.durationHours,
     stepIndex,
+    routeCity: lastLocation.citySlug,
     oldPlaceId: result.oldStep.suggestion.placeId,
     newPlaceId: result.newStep.suggestion.placeId,
     routePlaceIds: result.route.map((step) => step.suggestion.placeId),
@@ -1414,6 +1444,7 @@ async function sendRandomSuggestion(
   const lastLocation = chatId ? lastLocations.get(chatId) : undefined;
   analytics.track("random_selected", ctx, {
     hasLocation: Boolean(lastLocation),
+    citySlug: lastLocation?.citySlug ?? null,
     radiusMeters
   });
   if (lastLocation) {
@@ -1449,7 +1480,8 @@ function feedbackTargetFromLastLocation(lastLocation: LastLocation): PendingFeed
     return {
       type: "place",
       placeId: lastLocation.lastSuggestedPlace.placeId,
-      scenario
+      scenario,
+      citySlug: lastLocation.citySlug
     };
   }
 
@@ -1457,7 +1489,8 @@ function feedbackTargetFromLastLocation(lastLocation: LastLocation): PendingFeed
     return {
       type: "route",
       durationHours: lastLocation.lastRoute.durationHours,
-      placeIds: lastLocation.lastRoute.steps.map((step) => step.placeId)
+      placeIds: lastLocation.lastRoute.steps.map((step) => step.placeId),
+      citySlug: lastLocation.citySlug
     };
   }
 
@@ -1480,18 +1513,24 @@ function getScenarioFromAction(action: LastAction | undefined): PlaceScenarioKey
   return null;
 }
 
+function citySlugForCoordinates(lat: number, lon: number): SupportedCityId | null {
+  return findSupportedCityByCoordinates(lat, lon)?.id ?? null;
+}
+
 function feedbackStartedPayload(target: PendingFeedbackTarget): Record<string, unknown> {
   if (target.type === "place") {
     return {
       targetType: "place",
       placeId: target.placeId,
-      scenario: target.scenario
+      scenario: target.scenario,
+      citySlug: target.citySlug
     };
   }
 
   return {
     targetType: "route",
     durationHours: target.durationHours,
+    citySlug: target.citySlug,
     routePlaceIds: target.placeIds
   };
 }

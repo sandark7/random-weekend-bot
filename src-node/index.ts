@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   const database = openDatabase(config);
   const repo = new PlaceRepository(database.sqlite, config);
   const analytics = createAnalytics({ db: database.sqlite, config, logger });
-  const geocoder = new NominatimGeocoder(config, logger);
+  const geocoder = new NominatimGeocoder(config, logger, database.sqlite);
   const locationResolver = new LocationResolver(geocoder, config);
   const bot = createCityDateBot({ config, repo, locationResolver, logger, analytics });
   const server = createServer({ bot, config, logger });

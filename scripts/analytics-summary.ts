@@ -43,6 +43,7 @@ function printSummary(title: string, windowMs: number): void {
   console.log("");
 
   printCounts("Events", rows.map((row) => row.event_name));
+  printCounts("Cities", rows.map(cityPayload).filter(isString));
   printCounts("Scenarios", rows.map((row) => stringPayload(row, "scenario")).filter(isString));
   printRouteSummary(rows);
   printCounts("Feedback", rows
@@ -132,6 +133,15 @@ function percentile(values: number[], p: number): number {
 function stringPayload(row: ParsedRow, key: string): string | null {
   const value = row.payload[key];
   return typeof value === "string" ? value : null;
+}
+
+function cityPayload(row: ParsedRow): string | null {
+  return (
+    stringPayload(row, "citySlug") ??
+    stringPayload(row, "locationCity") ??
+    stringPayload(row, "routeCity") ??
+    stringPayload(row, "placeCity")
+  );
 }
 
 function numberPayload(row: ParsedRow, key: string): number | null {

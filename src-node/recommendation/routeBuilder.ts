@@ -45,102 +45,97 @@ export type ReplaceRouteStepResult = {
   newStep: RouteStep;
 };
 
-type RouteTemplateSlot = readonly PlaceScenarioKey[];
-type RouteTemplate = readonly RouteTemplateSlot[];
+type RouteScoringProfile = readonly Partial<Record<PlaceScenarioKey, number>>[];
 type NearbyCache = Map<string, PlaceSuggestion[]>;
 
 const ROUTE_CANDIDATE_POOL_SIZE = 3;
 
-const ROUTE_TEMPLATES: Record<RouteDurationHours, readonly RouteTemplate[]> = {
+const ROUTE_SCORING_PROFILES: Record<RouteDurationHours, readonly RouteScoringProfile[]> = {
   2: [
     [
-      ["coffee_snack"],
-      ["see"]
+      { coffee_snack: 9, see: 8, activity: 4 },
+      { activity: 10, eat: 9, see: 6, drink: 6 }
     ],
     [
-      ["coffee_snack"],
-      ["activity", "see"]
+      { see: 9, coffee_snack: 7, activity: 4 },
+      { eat: 10, activity: 8, drink: 7, see: 5 }
     ],
     [
-      ["see"],
-      ["coffee_snack"]
+      { activity: 8, see: 8, coffee_snack: 5 },
+      { eat: 10, drink: 8, see: 5 }
     ],
     [
-      ["see"],
-      ["eat", "activity"]
-    ],
-    [
-      ["see"],
-      ["drink"]
+      { eat: 9, see: 7, coffee_snack: 6 },
+      { see: 10, activity: 8, coffee_snack: 6 }
     ]
   ],
   3: [
     [
-      ["coffee_snack"],
-      ["see"],
-      ["eat"]
+      { coffee_snack: 9, see: 8 },
+      { see: 10, activity: 8 },
+      { eat: 10, drink: 8, activity: 6 }
     ],
     [
-      ["see"],
-      ["coffee_snack"],
-      ["eat", "drink"]
+      { see: 10, coffee_snack: 7 },
+      { activity: 9, see: 8 },
+      { eat: 10, drink: 8, relax: 6 }
     ],
     [
-      ["coffee_snack", "see"],
-      ["activity", "see"],
-      ["eat", "drink"]
+      { coffee_snack: 8, see: 8 },
+      { eat: 9, activity: 8, see: 7 },
+      { drink: 10, relax: 8, eat: 6 }
     ]
   ],
   5: [
     [
-      ["coffee_snack"],
-      ["see"],
-      ["activity", "see"],
-      ["eat"],
-      ["drink"]
+      { coffee_snack: 9, see: 8 },
+      { see: 10, activity: 7 },
+      { activity: 10, see: 8 },
+      { eat: 10, activity: 5 },
+      { drink: 10, relax: 8, see: 5 }
     ],
     [
-      ["see"],
-      ["coffee_snack"],
-      ["see", "activity"],
-      ["eat"],
-      ["drink"]
+      { see: 10, coffee_snack: 7 },
+      { coffee_snack: 8, activity: 7, see: 7 },
+      { activity: 10, see: 8 },
+      { eat: 10 },
+      { drink: 10, relax: 8, see: 5 }
     ],
     [
-      ["coffee_snack", "see"],
-      ["activity"],
-      ["see"],
-      ["eat"],
-      ["drink"]
+      { coffee_snack: 8, see: 8 },
+      { activity: 10, see: 7 },
+      { see: 9, activity: 8 },
+      { eat: 10, activity: 5 },
+      { drink: 10, relax: 8 }
     ]
   ],
   8: [
     [
-      ["coffee_snack"],
-      ["see"],
-      ["activity"],
-      ["eat"],
-      ["see"],
-      ["activity", "relax"],
-      ["drink", "relax", "see"]
+      { coffee_snack: 9, see: 8 },
+      { see: 10, activity: 7 },
+      { activity: 10, see: 7 },
+      { eat: 10 },
+      { see: 10, activity: 7 },
+      { activity: 10, relax: 9, see: 6 },
+      { drink: 10, relax: 9, see: 5 }
     ],
     [
-      ["coffee_snack", "see"],
-      ["activity", "see"],
-      ["see"],
-      ["eat"],
-      ["activity"],
-      ["see"],
-      ["drink", "relax", "see"]
+      { see: 10, coffee_snack: 8 },
+      { activity: 10, see: 8 },
+      { see: 10, activity: 7 },
+      { eat: 10 },
+      { activity: 10, see: 7 },
+      { see: 9, relax: 8, activity: 7 },
+      { drink: 10, relax: 9, see: 5 }
     ],
     [
-      ["coffee_snack"],
-      ["see"],
-      ["activity"],
-      ["eat"],
-      ["see"],
-      ["relax"],
-      ["drink", "see"]
+      { coffee_snack: 9, see: 8 },
+      { see: 10, activity: 7 },
+      { activity: 10 },
+      { eat: 10 },
+      { see: 10, activity: 7 },
+      { relax: 10, activity: 8, see: 6 },
+      { drink: 10, see: 7 }
     ]
   ]
 };
@@ -158,19 +153,20 @@ export function buildRoute(
   const targetMinutes = options.durationHours * 60;
   const transitionRadiusMeters = Math.min(options.radiusMeters, MAX_ROUTE_TRANSITION_METERS);
   const attempts: RouteStep[][] = [];
-  const templates = ROUTE_TEMPLATES[options.durationHours];
+  const profiles = ROUTE_SCORING_PROFILES[options.durationHours];
   const nearbyCache: NearbyCache = new Map();
 
-  for (let attempt = 0; attempt < 36; attempt += 1) {
-    const template = templates[attempt % templates.length];
-    const route = buildRouteFromTemplate(repo, {
-      template,
+  for (let attempt = 0; attempt < 48; attempt += 1) {
+    const profile = profiles[attempt % profiles.length];
+    const route = buildRouteFromScoringProfile(repo, {
+      profile,
       start: options.start,
       now: options.now,
       targetMinutes,
       radiusMeters: transitionRadiusMeters,
       excludePlaceIds: options.excludePlaceIds,
-      nearbyCache
+      nearbyCache,
+      attempt
     });
 
     if (routeIsAcceptable(route, targetMinutes, options.durationHours)) {
@@ -348,15 +344,16 @@ export function recalculateRouteSteps(
   return route;
 }
 
-function buildRouteFromTemplate(
+function buildRouteFromScoringProfile(
   repo: PlaceRepository,
   options: {
-    template: RouteTemplate;
+    profile: RouteScoringProfile;
     start: Coordinates;
     now: Date;
     targetMinutes: number;
     radiusMeters: number;
     excludePlaceIds: number[];
+    attempt: number;
     initialState?: {
       elapsedMinutes: number;
       lastPrimaryCategory: string | null;
@@ -377,7 +374,8 @@ function buildRouteFromTemplate(
   let usedFineDining = options.initialState?.usedFineDining ?? 0;
   let usedBathhouse = options.initialState?.usedBathhouse ?? 0;
 
-  for (const slot of options.template) {
+  for (let stepIndex = 0; stepIndex < options.profile.length; stepIndex += 1) {
+    const profileStep = options.profile[stepIndex] ?? {};
     const arrival = addMinutes(options.now, elapsedMinutes);
     const remainingMinutes = options.targetMinutes - elapsedMinutes;
 
@@ -385,8 +383,8 @@ function buildRouteFromTemplate(
       break;
     }
 
-    const picked = pickRouteStepForSlot(repo, {
-      scenarioKeys: slot,
+    const picked = pickScoredRouteStep(repo, {
+      profileStep,
       origin,
       arrival,
       remainingMinutes,
@@ -396,6 +394,9 @@ function buildRouteFromTemplate(
       lastScenarioKey,
       usedFineDining,
       usedBathhouse,
+      stepIndex,
+      targetStepCount: options.profile.length,
+      attempt: options.attempt,
       nearbyCache: options.nearbyCache
     });
 
@@ -437,10 +438,10 @@ function buildRouteFromTemplate(
   return steps;
 }
 
-function pickRouteStepForSlot(
+function pickScoredRouteStep(
   repo: PlaceRepository,
   options: {
-    scenarioKeys: RouteTemplateSlot;
+    profileStep: Partial<Record<PlaceScenarioKey, number>>;
     origin: Coordinates;
     arrival: Date;
     remainingMinutes: number;
@@ -450,13 +451,23 @@ function pickRouteStepForSlot(
     lastScenarioKey: PlaceScenarioKey | null;
     usedFineDining: number;
     usedBathhouse: number;
+    stepIndex: number;
+    targetStepCount: number;
+    attempt: number;
     nearbyCache?: NearbyCache;
   }
 ): { scenario: PlaceScenario; suggestion: PlaceSuggestion; walkMinutes: number; visitDurationMinutes: number } | null {
   const allowedScenarioKeys = new Set(allowedRouteScenarios(options.arrival, options.remainingMinutes));
-  const scenarioKeys = [...options.scenarioKeys].filter((scenarioKey) => (
-    allowedScenarioKeys.has(scenarioKey)
-  ));
+  const scenarioKeys = profileScenarioKeys(options.profileStep)
+    .filter((scenarioKey) => allowedScenarioKeys.has(scenarioKey));
+
+  const candidates: Array<{
+    scenario: PlaceScenario;
+    suggestion: PlaceSuggestion;
+    walkMinutes: number;
+    visitDurationMinutes: number;
+    score: number;
+  }> = [];
 
   for (const scenarioKey of scenarioKeys) {
     if (scenarioKey === options.lastScenarioKey) {
@@ -465,7 +476,7 @@ function pickRouteStepForSlot(
 
     const scenario = PLACE_SCENARIOS[scenarioKey];
 
-    const candidates = cachedFindNearbyByCategories(repo, {
+    const ranked = cachedFindNearbyByCategories(repo, {
       lat: options.origin.lat,
       lon: options.origin.lon,
       radiusMeters: options.radiusMeters,
@@ -496,23 +507,63 @@ function pickRouteStepForSlot(
           candidate.visitDurationMinutes
         ) === true
       ))
-      .sort((left, right) => (
-        routeCandidateRank(left.suggestion, scenario) - routeCandidateRank(right.suggestion, scenario)
-      ));
-
-    const topCandidates = candidates.slice(0, ROUTE_CANDIDATE_POOL_SIZE);
-    const picked = topCandidates[Math.floor(Math.random() * topCandidates.length)];
-    if (picked) {
-      return {
+      .map((candidate) => ({
         scenario,
+        suggestion: candidate.suggestion,
+        walkMinutes: candidate.walkMinutes,
+        visitDurationMinutes: candidate.visitDurationMinutes,
+        score: scoreRouteCandidate(candidate.suggestion, scenario, {
+          profileWeight: options.profileStep[scenarioKey] ?? 0,
+          stepIndex: options.stepIndex,
+          targetStepCount: options.targetStepCount,
+          remainingMinutes: options.remainingMinutes,
+          walkMinutes: candidate.walkMinutes,
+          visitDurationMinutes: candidate.visitDurationMinutes
+        })
+      }));
+
+    candidates.push(...ranked);
+  }
+
+  const topCandidates = candidates
+    .sort((left, right) => right.score - left.score)
+    .slice(0, ROUTE_CANDIDATE_POOL_SIZE);
+  const picked = topCandidates[options.attempt % Math.max(topCandidates.length, 1)];
+  return picked
+    ? {
+        scenario: picked.scenario,
         suggestion: picked.suggestion,
         walkMinutes: picked.walkMinutes,
         visitDurationMinutes: picked.visitDurationMinutes
-      };
-    }
-  }
+      }
+    : null;
+}
 
-  return null;
+function profileScenarioKeys(profileStep: Partial<Record<PlaceScenarioKey, number>>): PlaceScenarioKey[] {
+  return Object.entries(profileStep)
+    .filter(([, weight]) => (weight ?? 0) > 0)
+    .sort((left, right) => (right[1] ?? 0) - (left[1] ?? 0))
+    .map(([scenarioKey]) => scenarioKey as PlaceScenarioKey);
+}
+
+function scoreRouteCandidate(
+  suggestion: PlaceSuggestion,
+  scenario: PlaceScenario,
+  options: {
+    profileWeight: number;
+    stepIndex: number;
+    targetStepCount: number;
+    remainingMinutes: number;
+    walkMinutes: number;
+    visitDurationMinutes: number;
+  }
+): number {
+  const stepBudget = options.remainingMinutes / Math.max(options.targetStepCount - options.stepIndex, 1);
+  const durationPenalty = Math.abs((options.walkMinutes + options.visitDurationMinutes) - stepBudget) * 0.8;
+  const distancePenalty = suggestion.distanceMeters / 250;
+  const scenarioDurationPenalty = Math.abs(options.visitDurationMinutes - scenario.durationMinutes) * 0.15;
+
+  return options.profileWeight * 100 - durationPenalty - distancePenalty - scenarioDurationPenalty;
 }
 
 function cachedFindNearbyByCategories(

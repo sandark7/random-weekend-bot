@@ -48,4 +48,31 @@ describe("migrations", () => {
       db.close();
     }
   });
+
+  it("creates city-aware places metadata and persistent geocode cache", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "random-weekend-migrations-"));
+    tempDirs.push(tempDir);
+    const databasePath = join(tempDir, "bot.sqlite");
+
+    const result = runMigrations({ DATABASE_PATH: databasePath });
+
+    expect(result.applied).toContain("0010_city_slug_and_geocode_cache.sql");
+
+    const db = new Database(databasePath);
+    try {
+      const placeColumns = db.prepare("PRAGMA table_info(places)").all() as Array<{ name: string }>;
+      const geocodeCacheTable = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'geocode_cache'")
+        .get();
+      const placeIndexes = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'places'")
+        .all() as Array<{ name: string }>;
+
+      expect(placeColumns.map((row) => row.name)).toContain("city_slug");
+      expect(geocodeCacheTable).toEqual({ name: "geocode_cache" });
+      expect(placeIndexes.map((row) => row.name)).toContain("idx_places_city_slug");
+    } finally {
+      db.close();
+    }
+  });
 });

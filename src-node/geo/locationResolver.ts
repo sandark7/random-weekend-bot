@@ -1,5 +1,15 @@
 import type { AppConfig } from "../config.js";
 import type { GeocodedAddress, Geocoder } from "./geocoder.js";
+import {
+  DEFAULT_SUPPORTED_CITY,
+  SUPPORTED_CITIES,
+  containsComparablePhrase,
+  findSupportedCityByName,
+  normalizeCityComparable,
+  type BoundingBox,
+  type SupportedCity,
+  type SupportedCityId
+} from "./supportedCities.js";
 
 export type LocationInputKind = "exact_address" | "area_or_metro" | "poi" | "unknown";
 export type LocationConfidence = "good" | "medium" | "low";
@@ -13,6 +23,7 @@ export type ResolvedLocation =
       lat: number;
       lon: number;
       query: string;
+      citySlug: SupportedCityId;
     }
   | {
       status: "failed";
@@ -22,6 +33,7 @@ export type ResolvedLocation =
     };
 
 type ExactAddressParts = {
+  city: SupportedCity;
   street: string;
   streetName: string;
   streetType: string;
@@ -30,26 +42,15 @@ type ExactAddressParts = {
   queries: string[];
 };
 
-type BoundingBox = {
-  minLat: number;
-  maxLat: number;
-  minLon: number;
-  maxLon: number;
-};
-
 type KnownLocation = {
   label: string;
   aliases: string[];
   lat: number;
   lon: number;
+  cityId: SupportedCityId;
 };
 
-const defaultMoscowBoundingBox: BoundingBox = {
-  minLat: 55.45,
-  maxLat: 56.05,
-  minLon: 37.15,
-  maxLon: 38.1
-};
+const defaultCity = DEFAULT_SUPPORTED_CITY;
 
 const preciseAddresstypes = new Set([
   "house",
@@ -76,61 +77,90 @@ export const knownLocations: KnownLocation[] = [
     label: "Павелецкая",
     aliases: ["павелецкая", "павелецкий вокзал", "метро павелецкая", "paveletskaya"],
     lat: 55.73178,
-    lon: 37.63674
+    lon: 37.63674,
+    cityId: "moscow"
   },
   {
     label: "Белорусская",
     aliases: ["белорусская", "метро белорусская", "белорусский вокзал", "belorusskaya"],
     lat: 55.77639,
-    lon: 37.58459
+    lon: 37.58459,
+    cityId: "moscow"
   },
   {
     label: "Патриаршие пруды",
     aliases: ["патрики", "патриаршие", "патриаршие пруды", "patriki"],
     lat: 55.76383,
-    lon: 37.59231
+    lon: 37.59231,
+    cityId: "moscow"
   },
   {
     label: "Цветной бульвар",
     aliases: ["цветной", "цветной бульвар", "метро цветной бульвар"],
     lat: 55.77163,
-    lon: 37.6206
+    lon: 37.6206,
+    cityId: "moscow"
   },
   {
     label: "Москва-Сити",
     aliases: ["москва-сити", "москва сити", "деловой центр", "выставочная", "moscow city"],
     lat: 55.74754,
-    lon: 37.5349
+    lon: 37.5349,
+    cityId: "moscow"
   },
   {
     label: "Чистые пруды",
     aliases: ["чистые пруды", "чистопрудный", "метро чистые пруды"],
     lat: 55.76515,
-    lon: 37.63869
+    lon: 37.63869,
+    cityId: "moscow"
   },
   {
     label: "Зарядье",
     aliases: ["зарядье", "варварка", "китай-город"],
     lat: 55.75125,
-    lon: 37.62896
+    lon: 37.62896,
+    cityId: "moscow"
   },
   {
     label: "Пятницкая",
     aliases: ["пятницкая", "новокузнецкая", "третьяковская"],
     lat: 55.73961,
-    lon: 37.62812
+    lon: 37.62812,
+    cityId: "moscow"
+  },
+  {
+    label: "Краснодар, центр",
+    aliases: ["краснодар центр", "центр краснодара", "центр краснодар"],
+    lat: 45.03547,
+    lon: 38.97531,
+    cityId: "krasnodar"
+  },
+  {
+    label: "Краснодар, Красная улица",
+    aliases: ["красная", "улица красная", "краснодар красная", "красная улица"],
+    lat: 45.03547,
+    lon: 38.97531,
+    cityId: "krasnodar"
+  },
+  {
+    label: "Парк Краснодар",
+    aliases: ["парк краснодар", "парк галицкого", "галицкого", "стадион краснодар"],
+    lat: 45.04211,
+    lon: 39.03212,
+    cityId: "krasnodar"
   }
 ];
 
 export class LocationResolver {
-  private readonly bbox: BoundingBox;
+  private readonly defaultCity: SupportedCity;
 
   constructor(
     private readonly geocoder: Geocoder,
     config: Pick<AppConfig, "GEOCODER_VIEWBOX" | "GEOCODER_CITY_BIAS">,
     private readonly locations = knownLocations
   ) {
-    this.bbox = parseMoscowBoundingBox(config.GEOCODER_VIEWBOX);
+    this.defaultCity = findSupportedCityByName(config.GEOCODER_CITY_BIAS) ?? defaultCity;
   }
 
   async resolve(input: string): Promise<ResolvedLocation> {
@@ -144,9 +174,22 @@ export class LocationResolver {
       };
     }
 
-    const exactAddress = parseExactAddress(text);
-    if (exactAddress) {
-      return this.resolveExactAddress(exactAddress);
+    const cityContexts = cityContextsForInput(text, this.defaultCity);
+    const exactAddresses = cityContexts
+      .map((city) => parseExactAddress(text, city))
+      .filter((address): address is ExactAddressParts => Boolean(address));
+    if (exactAddresses.length > 0) {
+      const result = await this.resolveExactAddresses(exactAddresses);
+      if (result) {
+        return result;
+      }
+
+      return {
+        status: "failed",
+        confidence: "low",
+        kind: "exact_address",
+        reason: "no_exact_address_match"
+      };
     }
 
     const known = findKnownLocation(text, this.locations);
@@ -158,7 +201,8 @@ export class LocationResolver {
         label: known.label,
         lat: known.lat,
         lon: known.lon,
-        query: known.label
+        query: known.label,
+        citySlug: known.cityId
       };
     }
 
@@ -175,27 +219,36 @@ export class LocationResolver {
     };
   }
 
-  private async resolveExactAddress(address: ExactAddressParts): Promise<ResolvedLocation> {
-    let firstPlausible: { candidate: GeocodedAddress; query: string } | null = null;
+  private async resolveExactAddresses(addresses: ExactAddressParts[]): Promise<ResolvedLocation | null> {
+    let firstPlausible: { address: ExactAddressParts; candidate: GeocodedAddress; query: string } | null = null;
+    const maxQueryCount = Math.max(...addresses.map((address) => address.queries.length));
 
-    for (const query of address.queries) {
-      const candidates = await this.geocoder.search(query, { limit: 8 });
-      const exact = candidates.find((candidate) => this.isExactAddressMatch(candidate, address));
-      if (exact) {
-        return {
-          status: "ok",
-          confidence: "good",
-          kind: "exact_address",
-          label: formatCandidateAddressLabel(exact, address),
-          lat: exact.lat,
-          lon: exact.lon,
-          query
-        };
-      }
+    for (let queryIndex = 0; queryIndex < maxQueryCount; queryIndex += 1) {
+      for (const address of addresses) {
+        const query = address.queries[queryIndex];
+        if (!query) {
+          continue;
+        }
 
-      const plausible = candidates.find((candidate) => this.isPlausibleAddressCandidate(candidate, address));
-      if (plausible && !firstPlausible) {
-        firstPlausible = { candidate: plausible, query };
+        const candidates = await this.geocoder.search(query, geocoderOptionsForCity(address.city, { limit: 8 }));
+        const exact = candidates.find((candidate) => this.isExactAddressMatch(candidate, address));
+        if (exact) {
+          return {
+            status: "ok",
+            confidence: "good",
+            kind: "exact_address",
+            label: formatCandidateAddressLabel(exact, address),
+            lat: exact.lat,
+            lon: exact.lon,
+            query,
+            citySlug: address.city.id
+          };
+        }
+
+        const plausible = candidates.find((candidate) => this.isPlausibleAddressCandidate(candidate, address));
+        if (plausible && !firstPlausible) {
+          firstPlausible = { address, candidate: plausible, query };
+        }
       }
     }
 
@@ -204,44 +257,46 @@ export class LocationResolver {
         status: "needs_confirmation",
         confidence: "medium",
         kind: "exact_address",
-        label: formatCandidateAddressLabel(firstPlausible.candidate, address),
+        label: formatCandidateAddressLabel(firstPlausible.candidate, firstPlausible.address),
         lat: firstPlausible.candidate.lat,
         lon: firstPlausible.candidate.lon,
-        query: firstPlausible.query
+        query: firstPlausible.query,
+        citySlug: firstPlausible.address.city.id
       };
     }
 
-    return {
-      status: "failed",
-      confidence: "low",
-      kind: "exact_address",
-      reason: "no_exact_address_match"
-    };
+    return null;
   }
 
   private async resolveLooseLocation(
     text: string,
     kind: "area_or_metro" | "poi"
   ): Promise<ResolvedLocation> {
-    const candidates = await this.geocoder.search(`Москва, ${text}`, { limit: 3 });
-    const candidate = candidates.find((item) => isInBoundingBox(item, this.bbox) && isMoscowResult(item));
-    if (!candidate) {
-      return {
-        status: "failed",
-        confidence: "low",
-        kind,
-        reason: "no_loose_location_match"
-      };
+    for (const city of cityContextsForInput(text, this.defaultCity)) {
+      const candidates = await this.geocoder.search(
+        looseLocationQuery(text, city),
+        geocoderOptionsForCity(city, { limit: 3 })
+      );
+      const candidate = candidates.find((item) => isInBoundingBox(item, city.bbox) && isCityResult(item, city));
+      if (candidate) {
+        return {
+          status: "needs_confirmation",
+          confidence: "medium",
+          kind,
+          label: formatLooseLocationLabel(candidate, text, city),
+          lat: candidate.lat,
+          lon: candidate.lon,
+          query: candidate.query,
+          citySlug: city.id
+        };
+      }
     }
 
     return {
-      status: "needs_confirmation",
-      confidence: "medium",
+      status: "failed",
+      confidence: "low",
       kind,
-      label: formatLooseLocationLabel(candidate, text),
-      lat: candidate.lat,
-      lon: candidate.lon,
-      query: candidate.query
+      reason: "no_loose_location_match"
     };
   }
 
@@ -254,8 +309,8 @@ export class LocationResolver {
 
   private isPlausibleAddressCandidate(candidate: GeocodedAddress, address: ExactAddressParts): boolean {
     return (
-      isMoscowResult(candidate) &&
-      isInBoundingBox(candidate, this.bbox) &&
+      isCityResult(candidate, address.city) &&
+      isInBoundingBox(candidate, address.city.bbox) &&
       isPreciseResult(candidate) &&
       streetMatches(candidate, address) &&
       !hasDifferentHouseNumber(candidate, address.houseNumber)
@@ -284,10 +339,8 @@ export function classifyLocationInput(input: string): LocationInputKind {
   return "unknown";
 }
 
-export function parseExactAddress(input: string): ExactAddressParts | null {
-  const withoutCity = normalizeText(input)
-    .replace(/^москва\s*,?\s*/i, "")
-    .replace(/^г\.?\s*москва\s*,?\s*/i, "")
+export function parseExactAddress(input: string, city: SupportedCity = defaultCity): ExactAddressParts | null {
+  const withoutCity = stripCityFromAddressInput(normalizeText(input), city)
     .replace(/[,.]+/g, " ")
     .trim();
   const match = /^(.+?)\s+(?:д(?:ом)?\.?\s*)?(\d+[а-яa-z]?(?:[/-]\d+)?(?:\s*(?:с|стр|строение|к|корп|корпус)\.?\s*\d+[а-яa-z]?)?)$/iu.exec(
@@ -311,16 +364,17 @@ export function parseExactAddress(input: string): ExactAddressParts | null {
   }
 
   const streetForQuery = `${streetName} ${streetType}`;
-  const label = `Москва, ${streetForQuery}, ${houseNumber}`;
+  const label = `${city.label}, ${streetForQuery}, ${houseNumber}`;
   const queries = uniqueStrings([
     label,
-    `Москва, ${streetType} ${streetName}, ${houseNumber}`,
-    `Москва, ${streetName}, ${houseNumber}`,
-    `${streetType} ${streetName}, ${houseNumber}, Москва`,
-    `${streetName}, ${houseNumber}, Москва`
+    `${city.label}, ${streetType} ${streetName}, ${houseNumber}`,
+    `${city.label}, ${streetName}, ${houseNumber}`,
+    `${streetType} ${streetName}, ${houseNumber}, ${city.label}`,
+    `${streetName}, ${houseNumber}, ${city.label}`
   ]);
 
   return {
+    city,
     street,
     streetName,
     streetType,
@@ -335,6 +389,50 @@ function findKnownLocation(input: string, locations: KnownLocation[]): KnownLoca
   return locations.find((location) => (
     location.aliases.some((alias) => normalizeComparable(alias) === text)
   )) ?? null;
+}
+
+function cityContextsForInput(input: string, preferredCity: SupportedCity): SupportedCity[] {
+  const explicitCity = findSupportedCityByName(input);
+  if (explicitCity) {
+    return [explicitCity];
+  }
+
+  return [
+    preferredCity,
+    ...SUPPORTED_CITIES.filter((city) => city.id !== preferredCity.id)
+  ];
+}
+
+function geocoderOptionsForCity(
+  city: SupportedCity,
+  options: { limit?: number; layer?: string }
+): { limit?: number; layer?: string; cityBias: string; citySlug: SupportedCityId; viewbox: string; bounded: boolean } {
+  return {
+    ...options,
+    cityBias: city.label,
+    citySlug: city.id,
+    viewbox: city.viewbox,
+    bounded: true
+  };
+}
+
+function looseLocationQuery(input: string, city: SupportedCity): string {
+  const stripped = stripCityFromAddressInput(input, city);
+  return stripped ? `${city.label}, ${stripped}` : city.label;
+}
+
+function stripCityFromAddressInput(input: string, city: SupportedCity): string {
+  let text = normalizeText(input);
+  for (const alias of [...city.aliases].sort((left, right) => right.length - left.length)) {
+    const aliasPattern = escapeRegExp(alias).replace(/\s+/g, "\\s+");
+    text = text
+      .replace(new RegExp(`^(?:г\\.?\\s*|город\\s*)?${aliasPattern}(?:\\s*,\\s*|\\s+)`, "iu"), "")
+      .replace(new RegExp(`(?:\\s*,\\s*|\\s+)(?:г\\.?\\s*|город\\s*)?${aliasPattern}$`, "iu"), "")
+      .replace(new RegExp(`^(?:г\\.?\\s*|город\\s*)?${aliasPattern}$`, "iu"), "")
+      .trim();
+  }
+
+  return normalizeText(text);
 }
 
 function isAreaOrMetroLike(input: string): boolean {
@@ -398,15 +496,20 @@ function getCandidateHouseNumber(candidate: GeocodedAddress): string {
   return /^\d/.test(firstDisplayPart) ? firstDisplayPart : "";
 }
 
-function isMoscowResult(candidate: GeocodedAddress): boolean {
+function isCityResult(candidate: GeocodedAddress, city: SupportedCity): boolean {
   const address = candidate.address;
-  return [
+  const values = [
     address?.city,
     address?.town,
     address?.municipality,
     address?.state,
     candidate.displayName
-  ].some((value) => /москва|moscow/i.test(value ?? ""));
+  ].map((value) => normalizeComparable(value ?? ""));
+
+  return city.aliases.some((alias) => {
+    const normalizedAlias = normalizeComparable(alias);
+    return values.some((value) => containsComparablePhrase(value, normalizedAlias));
+  });
 }
 
 function isInBoundingBox(candidate: GeocodedAddress, bbox: BoundingBox): boolean {
@@ -427,21 +530,21 @@ function isPreciseResult(candidate: GeocodedAddress): boolean {
 
 function formatCandidateAddressLabel(candidate: GeocodedAddress, fallback: ExactAddressParts): string {
   const address = candidate.address;
-  const city = "Москва";
+  const city = fallback.city.label;
   const road = address?.road ?? address?.pedestrian ?? `${fallback.streetName} ${fallback.streetType}`;
   const house = address?.house_number;
 
   return house ? `${city}, ${road}, ${house}` : `${city}, ${road}`;
 }
 
-function formatLooseLocationLabel(candidate: GeocodedAddress, fallback: string): string {
+function formatLooseLocationLabel(candidate: GeocodedAddress, fallback: string, city: SupportedCity): string {
   const name = candidate.name?.trim();
   if (name) {
-    return name;
+    return labelWithCity(name, city);
   }
 
   const address = candidate.address;
-  return (
+  const label = (
     address?.subway ??
     address?.railway ??
     address?.neighbourhood ??
@@ -449,24 +552,15 @@ function formatLooseLocationLabel(candidate: GeocodedAddress, fallback: string):
     address?.amenity ??
     normalizeText(fallback)
   );
+  return labelWithCity(label, city);
 }
 
-function parseMoscowBoundingBox(value: string | undefined): BoundingBox {
-  if (!value) {
-    return defaultMoscowBoundingBox;
-  }
-
-  const [left, top, right, bottom] = value.split(",").map(Number);
-  if ([left, top, right, bottom].every(Number.isFinite)) {
-    return {
-      minLat: Math.min(bottom, top),
-      maxLat: Math.max(bottom, top),
-      minLon: Math.min(left, right),
-      maxLon: Math.max(left, right)
-    };
-  }
-
-  return defaultMoscowBoundingBox;
+function labelWithCity(label: string, city: SupportedCity): string {
+  const normalizedLabel = normalizeComparable(label);
+  const alreadyHasCity = city.aliases.some((alias) => (
+    containsComparablePhrase(normalizedLabel, normalizeComparable(alias))
+  ));
+  return alreadyHasCity ? label : `${city.label}, ${label}`;
 }
 
 function inferStreetType(value: string): string {
@@ -510,13 +604,11 @@ function normalizeHouseNumber(value: string | undefined): string {
 }
 
 function normalizeComparable(value: string): string {
-  return normalizeText(value)
-    .toLowerCase()
-    .replaceAll("ё", "е")
-    .replace(/[«»"']/g, "")
-    .replace(/[.,:;]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeCityComparable(value);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeText(value: string): string {
@@ -533,8 +625,4 @@ function candidateHouseNumberExtendsExpected(candidate: string, expected: string
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
